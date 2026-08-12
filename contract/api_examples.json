@@ -1,0 +1,60 @@
+{
+  "_comment": "API CONTRACT v1 - what Person 1's app calls on Person 3's server. Base URL in dev: http://<person3-laptop-ip>:8000",
+
+  "GET /ping": {
+    "purpose": "is the server alive?",
+    "response": { "status": "ok", "service": "sih25005-server" }
+  },
+
+  "GET /animal/{animal_id}": {
+    "purpose": "profile + eligibility after the app scans an ear tag",
+    "example_request": "GET /animal/356279812345",
+    "response": {
+      "animal_id": "356279812345",
+      "species": "cattle",
+      "breed": "Gir",
+      "dob": "2022-11-03",
+      "lactation_no": 1,
+      "last_calving_date": "2026-06-26",
+      "owner": "Ramesh Kumar",
+      "village": "Anand",
+      "eligible": true,
+      "eligible_reason": "first lactation, day 47 after calving"
+    },
+    "error_404": { "detail": "animal not found in BPA records" }
+  },
+
+  "POST /session": {
+    "purpose": "upload one scoring session (photos + video + metadata), get the scored result back",
+    "content_type": "multipart/form-data",
+    "fields": {
+      "animal_id": "356279812345",
+      "device_session_id": "app-generated unique id, used to prevent duplicates on retry",
+      "side_photo": "(file)",
+      "rear_photo": "(file)",
+      "gait_video": "(file)"
+    },
+    "response": "the full scoring_result.json object (see scoring_result.json)"
+  },
+
+  "GET /animal/{animal_id}/history": {
+    "purpose": "past sessions for trends",
+    "response": {
+      "animal_id": "356279812345",
+      "sessions": [
+        { "session_id": "dev-a1b2c3d4", "date": "2026-08-12", "weight_kg_mid": 398, "health_flags": ["locomotion_abnormal"] }
+      ]
+    }
+  },
+
+  "POST /sync": {
+    "purpose": "batch upload of offline-queued sessions when network returns",
+    "request": { "sessions": ["array of the same multipart payloads, sent one by one by the app"] },
+    "rule": "if device_session_id already exists on the server, skip it and return status=duplicate - the app marks it synced either way"
+  },
+
+  "GET /overlays/{session_id}/{trait_name}.jpg": {
+    "purpose": "the explainability image for one trait (photo with keypoints + measurement drawn)",
+    "response": "static JPEG file"
+  }
+}
