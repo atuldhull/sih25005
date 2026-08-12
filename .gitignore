@@ -12,9 +12,9 @@ server/.venv/
 app/build/
 app/.dart_tool/
 
-# Uploaded photos/videos during testing
+# Uploaded photos/videos and rendered overlays during testing
 server/uploads/
-server/overlays/
+server/overlays_cache/
 
 # ML weights and datasets (too big for git - share via Drive/Kaggle)
 ml/weights/

@@ -1,9 +1,13 @@
+import re
 from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from pymongo import MongoClient
 
+from overlays import render_overlay
 from scoring import score_animal
 
 app = FastAPI(title="SIH25005 Backend")
@@ -12,6 +16,11 @@ client = MongoClient("mongodb://127.0.0.1:27017", serverSelectionTimeoutMS=3000)
 db = client["sih25005"]
 
 UPLOAD_DIR = Path(__file__).parent / "uploads"
+OVERLAY_DIR = Path(__file__).parent / "overlays_cache"
+
+
+def _slug(name: str) -> str:
+    return "".join(c for c in name.lower() if c.isalnum())
 
 
 def check_eligibility(animal: dict) -> tuple[bool, str]:
@@ -107,6 +116,52 @@ async def create_session(
         "result": dict(result),
     })
     return result
+
+
+class SyncCheckRequest(BaseModel):
+    device_session_ids: list[str]
+
+
+@app.post("/sync")
+def sync_check(body: SyncCheckRequest):
+    """Reconcile the app's offline queue: for each queued id, say
+    whether the server already has it. exists -> app marks it synced;
+    missing -> app re-uploads via POST /session (which is retry-safe)."""
+    results = []
+    for sid in body.device_session_ids:
+        exists = db.sessions.find_one({"session_id": sid}) is not None
+        results.append({"device_session_id": sid,
+                        "status": "exists" if exists else "missing"})
+    return {"results": results}
+
+
+@app.get("/overlays/{session_id}/{trait_file}")
+def get_overlay(session_id: str, trait_file: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
+        raise HTTPException(status_code=404, detail="unknown session")
+
+    target = _slug(trait_file.rsplit(".", 1)[0])
+    cached = OVERLAY_DIR / session_id / f"{target}.jpg"
+    if cached.exists():
+        return FileResponse(cached, media_type="image/jpeg")
+
+    session = db.sessions.find_one({"session_id": session_id})
+    if session is None:
+        raise HTTPException(status_code=404, detail="unknown session")
+
+    trait = next((t for t in session["result"]["traits"]
+                  if _slug(t["name"]) == target), None)
+    if trait is None:
+        raise HTTPException(status_code=404, detail="unknown trait name")
+    if not trait.get("overlay_points"):
+        raise HTTPException(status_code=404,
+                            detail="trait was not scored - no overlay available")
+
+    files = session.get("files", {})
+    source = (files.get("rear.jpg") if trait["view"] in ("rear", "video")
+              else files.get("side.jpg"))
+    render_overlay(source, trait, cached)
+    return FileResponse(cached, media_type="image/jpeg")
 
 
 @app.get("/animal/{animal_id}/history")

@@ -2,9 +2,12 @@
 
 Run:  venv\\Scripts\\python test_session.py
 """
+import shutil
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
-from main import app
+from main import OVERLAY_DIR, app, db
 
 client = TestClient(app)
 
@@ -25,8 +28,8 @@ def files():
 
 def main():
     # fresh start for this test's session id
-    from main import db
     db.sessions.delete_many({"session_id": "test-session-001"})
+    shutil.rmtree(Path(OVERLAY_DIR) / "test-session-001", ignore_errors=True)
 
     r = client.post("/session", data={"animal_id": ELIGIBLE,
                                       "device_session_id": "test-session-001"},
@@ -53,6 +56,21 @@ def main():
     r4 = client.get(f"/animal/{ELIGIBLE}/history")
     assert any(s["session_id"] == "test-session-001" for s in r4.json()["sessions"])
     print("PASS  session appears in history")
+
+    r5 = client.post("/sync", json={"device_session_ids":
+                                    ["test-session-001", "ghost-999"]})
+    statuses = {x["device_session_id"]: x["status"] for x in r5.json()["results"]}
+    assert statuses == {"test-session-001": "exists", "ghost-999": "missing"}
+    print("PASS  /sync reconcile: exists + missing reported correctly")
+
+    scored_trait = next(t for t in body["traits"] if t["score"] is not None)
+    fname = scored_trait["name"].replace(" ", "_") + ".jpg"
+    r6 = client.get(f"/overlays/test-session-001/{fname}")
+    assert r6.status_code == 200 and r6.content[:2] == b"\xff\xd8", r6.text
+    r6b = client.get(f"/overlays/test-session-001/{fname}")  # cached second hit
+    assert r6b.status_code == 200
+    print(f"PASS  overlay rendered for '{scored_trait['name']}' "
+          f"({len(r6.content)} bytes, cached on repeat)")
 
 
 if __name__ == "__main__":

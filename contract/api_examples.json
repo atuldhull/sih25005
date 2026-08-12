@@ -51,9 +51,14 @@
   },
 
   "POST /sync": {
-    "purpose": "batch upload of offline-queued sessions when network returns",
-    "request": { "sessions": ["array of the same multipart payloads, sent one by one by the app"] },
-    "rule": "if device_session_id already exists on the server, skip it and return status=duplicate - the app marks it synced either way"
+    "purpose": "reconcile the offline queue: app asks which queued sessions the server already has",
+    "content_type": "application/json",
+    "request": { "device_session_ids": ["test-session-001", "ghost-999"] },
+    "response": { "results": [
+      { "device_session_id": "test-session-001", "status": "exists" },
+      { "device_session_id": "ghost-999", "status": "missing" }
+    ] },
+    "rule": "exists -> app marks it synced locally; missing -> app re-uploads it via POST /session (which is retry-safe and returns duplicate:true if it actually arrived)"
   },
 
   "GET /overlays/{session_id}/{trait_name}.jpg": {
