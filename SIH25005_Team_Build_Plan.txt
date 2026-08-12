@@ -1,0 +1,650 @@
+=====================================================================
+ SIH25005 - IMAGE BASED ANIMAL TYPE CLASSIFICATION (CATTLE & BUFFALO)
+ TEAM BUILD PLAN - 3 PEOPLE, 3 LAPTOPS
+=====================================================================
+
+ONE-LINE PITCH
+A phone app that lets any field worker produce the official NDDB
+type-classification scorecard (20 traits, scored 1-9) for a cow or
+buffalo from a few photos and one short video - offline-first,
+explainable, and linked to the animal's Pashu Aadhaar ear tag.
+
+WHAT "TYPE CLASSIFICATION" MEANS (do not confuse with breed ID)
+It does NOT mean "classify which type/breed of animal". It is the
+official scoring of body structure: 20 traits from NDDB's scorecard,
+each scored 1 to 9 on the ICAR linear scale. IMPORTANT: 1 and 9 are
+opposite biological extremes, NOT bad and good. Stature 1 = very
+short, 9 = very tall. Neither is "better" - never show red/green.
+
+WHY THIS IS NOT THE SOLUTION EVERY OTHER TEAM BRINGS
+Most teams will show up with "fine-tuned CNN predicts breed/score".
+This solution is different on purpose, and every piece is free:
+1. Ear tag as the RULER - no published work uses the Indian NDDB
+   tag as a calibration object. Scale in every photo, for free.
+2. Refusing to score as a FEATURE - eligibility gate straight from
+   NDDB's own rulebook. Systems that always output a number look
+   naive; ours knows when not to.
+3. Offline-first for real rural India - capture never needs network.
+4. A full pre-screening layer, not just scores - symptom detection
+   + gait analysis + Veterinary Knowledge Graph -> early warnings
+   escalated to vet officers.
+5. Explainability by MEASUREMENT, not heatmaps - every score shows
+   the exact keypoints and values it came from.
+6. Regional-language voice chatbot over the animal's own record.
+7. 100% free and license-safe stack (Apache/MIT only - no AGPL,
+   no non-commercial licenses a government could never deploy).
+
+THE SHARED PIPELINE (the spine everything plugs into)
+
+  Guided capture (side photo + rear photo + 8-sec walking video)
+        |
+        v
+  Quality gate (blur? full animal in frame? tag visible?)
+        |
+        v
+  Eligibility gate (is this animal allowed to be scored today?)
+        |
+        v
+  RT-DETRv2 detector -> animal box + ear tag box     [on phone]
+        |
+        +--> Ear tag branch: OCR 12-digit Pashu Aadhaar -> identity,
+        |    breed, calving date from BPA record (mocked)
+        |    + solvePnP on tag corners -> real-world cm scale (ruler)
+        v
+  Server side: segmentation + RTMPose keypoints (DINOv2 features)
+        |
+        v
+  SMAL 3D reconstruction (only for: Heart Girth, BCS, volume)
+        |
+        v
+  Measurements -> per-trait 1-9 scores + confidence intervals
+        |
+        v
+  Offline queue on phone -> auto-sync to server when network returns
+
+=====================================================================
+ THE GOLDEN RULE - FREEZE THE JSON CONTRACT ON DAY 1
+=====================================================================
+
+Before anyone writes real code, all 3 agree on ONE example file:
+contract/scoring_result.json. Person 1 builds the app that DISPLAYS
+this file. Person 2 builds the pipeline that PRODUCES this file.
+Person 3 builds the server that TRANSPORTS this file. Nobody ever
+waits for anybody. If the contract must change: 3-person call, same
+day, announced in group chat.
+
+Example (shortened - full version has all 20 traits):
+
+{
+  "animal_id": "356279812345",
+  "species": "cattle",
+  "breed_registered": "Gir",
+  "breed_verified": true,
+  "eligible": true,
+  "eligible_reason": "first lactation, day 47 after calving",
+  "traits": [
+    {
+      "name": "Rump Angle",
+      "category": "Rump",
+      "score": 7,
+      "confidence": 0.86,
+      "measured_value": "31 deg",
+      "measure_class": "A",
+      "overlay_points": [[412, 300], [590, 342]]
+    }
+  ],
+  "weight_kg": {"low": 385, "high": 412, "method": "girth-regression"},
+  "symptom_vector": [
+    {"symptom": "gait_asymmetry", "confidence": 0.78,
+     "region": "legs", "source": "video"}
+  ],
+  "risk_report": [
+    {"condition": "lameness (hoof origin)", "risk": "medium",
+     "because_of": ["gait_asymmetry"], "action": "refer to vet"}
+  ],
+  "health_flags": ["locomotion_abnormal"],
+  "captured_at": "2026-08-09T10:30:00",
+  "synced": false
+}
+
+=====================================================================
+=====================================================================
+ PERSON 1 - MOBILE APP (the face)
+ Owns: (h) guided capture, (f) offline sync,
+       (g-display) explainability screens, (e-UI) records screens
+ Tools: Flutter (free), SQLite via sqflite package, Dart
+ Needs: no GPU, no ML knowledge. Works fully against fake JSON.
+=====================================================================
+=====================================================================
+
+---------------------------------------------------------------------
+ FEATURE (h) - GUIDED MULTI-ANGLE CAPTURE
+---------------------------------------------------------------------
+WHAT IT IS
+The scorecard dictates the photography. Side view gives stature,
+body length/depth, angularity, rump angle. Rear view gives rump
+width, all 9 udder traits, rear legs rear view. An 8-second walking
+video gives the 3 feet-and-legs traits (motion shows what a still
+photo cannot). The app walks the user through all three captures
+like a passport-photo booth.
+
+HOW TO DO IT (procedure)
+1. Screen 1: "Scan ear tag" - open camera, user points at tag.
+   (For MVP: also allow typing the 12-digit number manually.)
+2. Screen 2: "Side view" - show a cow silhouette outline overlay
+   on the camera preview. User lines the animal up, taps capture.
+3. Quality gate BEFORE accepting the photo:
+   - Blur check: OpenCV Laplacian variance (a 5-line function -
+     variance below threshold = blurry = ask to retake).
+   - Frame check: for MVP simply require user confirmation
+     "is the whole animal visible? yes/retake".
+4. Screen 3: "Rear view" - same flow, rear silhouette overlay.
+5. Screen 4: "Walking video" - record exactly 8 seconds while the
+   animal walks; show a countdown timer.
+6. Save all files locally with the session (see feature f).
+
+FLOW
+  scan tag -> side photo -> quality check -> rear photo -> quality
+  check -> 8s video -> session saved locally -> (send or queue)
+
+---------------------------------------------------------------------
+ FEATURE (f) - OFFLINE-FIRST SYNC
+---------------------------------------------------------------------
+WHAT IT IS
+Field workers are in villages with weak/no network. The app must
+NEVER require internet to capture and save. Sessions queue locally
+and auto-upload when connectivity appears. This is one of the
+strongest demo features - judges love it for rural India.
+
+HOW TO DO IT (procedure)
+1. SQLite database on the phone with one table:
+   sessions(id, animal_id, photo_paths, video_path, result_json,
+            status)   where status = 'pending' | 'synced'
+2. On capture complete: insert row with status='pending'.
+3. Background listener: use the connectivity_plus Flutter package -
+   it fires an event when network state changes.
+4. On "online" event: loop over all rows with status='pending',
+   POST each to the server (Person 3's /session endpoint),
+   on HTTP 200 mark status='synced' and store the returned
+   result_json.
+5. Retry rule: if upload fails mid-way, row stays 'pending' -
+   it simply retries on the next connectivity event. Never delete
+   a pending row.
+6. UI: a small badge showing "3 sessions waiting to sync" and a
+   green tick when everything is synced.
+
+FLOW
+  capture -> save row (pending) -> [no network? do nothing] ->
+  network appears -> auto-upload queue -> mark synced -> update UI
+
+DEMO TRICK
+On stage: put phone in airplane mode, do a full capture, show the
+"waiting to sync" badge, switch airplane mode off, watch it sync
+live. 30 seconds, always lands well.
+
+---------------------------------------------------------------------
+ FEATURE (g-display) - EXPLAINABILITY SCREENS
+---------------------------------------------------------------------
+WHAT IT IS
+Every score comes with visual proof. Tap "Rump Angle: 7" and see
+the animal's photo with the exact keypoints and the measured angle
+drawn on it ("31 deg between hip bone and pin bone"). This is exact
+measurement evidence, not an AI heatmap guess.
+
+HOW TO DO IT (procedure)
+1. Scorecard screen: list of 20 traits grouped by the 5 categories,
+   each row = trait name + score (1-9) + small confidence bar.
+   NEVER color scores red/green (1 and 9 are extremes, not quality).
+2. Tap a trait -> detail screen: the overlay image (Person 3 serves
+   it as a URL/file) + the measured value + one plain-language line
+   ("Rump angle is the slope from hip bone to pin bone").
+3. Traits the system refused to score show "not scored" + reason
+   (low confidence / animal not eligible) - refusing is a feature.
+
+FLOW
+  scorecard list -> tap trait -> overlay image + measured value +
+  plain explanation -> back
+
+---------------------------------------------------------------------
+ FEATURE (e-UI) - ANIMAL RECORD SCREENS
+---------------------------------------------------------------------
+WHAT IT IS
+The app-side view of the animal's health/scoring history.
+
+HOW TO DO IT (procedure)
+1. After tag scan, call GET /animal/{id} (Person 3) -> show profile:
+   breed, age, lactation, calving date, eligibility status.
+2. History tab: past sessions with dates, weight trend as a simple
+   line chart (fl_chart package), previous scorecards.
+3. If offline: show whatever is cached in SQLite from last sync.
+
+FLOW
+  scan tag -> profile (from server or cache) -> history / trends ->
+  start new scoring session
+
+=====================================================================
+=====================================================================
+ PERSON 2 - ML PIPELINE (the brain)  [strongest ML person]
+ Owns: (a) tag reading + breed verification, (b) 20-trait scoring,
+       (c) weight, (d part 1) symptom & gait detection,
+       (g-generate) overlay data
+ Tools: Python, PyTorch, OpenCV, RT-DETRv2, RTMPose (Apache-2.0),
+        DINOv2, Kaggle/Colab free GPU for training, CPU ok for demo
+ LICENSE WARNING: do NOT use YOLOv8/Ultralytics (AGPL) or
+ MambaVision / X-Pose / SuperAnimal (non-commercial). A government
+ deployment cannot ship those. RT-DETRv2, RTMPose, DINOv2 are safe.
+=====================================================================
+=====================================================================
+
+DELIVERABLE SHAPE
+One Python function the server can call:
+
+    def score_animal(side_img, rear_img, video_path, animal_record):
+        ...
+        return result_dict   # exactly matches the JSON contract
+
+Everything below lives behind that one function.
+
+---------------------------------------------------------------------
+ FEATURE (a) - EAR TAG: IDENTITY + SCALE + BREED VERIFICATION
+---------------------------------------------------------------------
+WHAT IT IS
+The government ear tag is three things at once:
+1. IDENTITY - it carries the 12-digit Pashu Aadhaar number that
+   links to the animal's BPA record (breed, calving date, etc.).
+2. A RULER - its printed parts have government-specified physical
+   sizes, so once you find it in the photo you know the real-world
+   scale of everything at that depth. Known sizes (NDDB spec):
+   - round button: 27 mm diameter (tolerance +/- 2 mm)
+   - barcode line height: 10 mm
+   - digit line height: 18 mm
+   (Do NOT use the overall panel size - vendor variance ~5%.)
+3. A FRAUD CHECK - the model verifies the photo matches the breed
+   registered in the database. We do NOT predict breed as a main
+   feature - the database already stores it. We verify it.
+
+HOW TO DO IT (procedure)
+1. Train/fine-tune RT-DETRv2 with 2 extra classes: "ear_tag"
+   (and "animal" for the main box). A few hundred labeled tag
+   boxes is enough - label with LabelStudio (free).
+2. Crop the tag box. Find the 4 corners of the yellow panel
+   (OpenCV contour + corner detection).
+3. solvePnP (cv2.solvePnPGeneric with IPPE flag) on the 4 corners:
+   because the tag is a flat plane of known size, this gives the
+   exact 3D pose AND the mm-per-pixel scale. This is the PRIMARY
+   ruler. The 27 mm button ellipse is the cross-check.
+4. OCR the digits: two rows (6 digits at 10 mm + 6 digits at
+   18 mm). PaddleOCR (free) works; fine-tune if accuracy is low.
+5. Send the 12-digit ID to the server -> get the BPA record back.
+6. Breed verification: DINOv2 encoder + small classifier head
+   trained on Indian breed images (Kaggle datasets exist).
+   Output = does the photo match the registered breed? true/false
+   + confidence. Mismatch -> flag "possible tag/registration error".
+
+FLOW
+  photo -> detect tag -> corners -> solvePnP -> mm/pixel scale
+        -> OCR -> 12-digit ID -> fetch record -> verify breed
+
+---------------------------------------------------------------------
+ FEATURE (b) - THE CORE: 20-TRAIT TYPE CLASSIFICATION SCORING
+---------------------------------------------------------------------
+THE 20 NDDB TRAITS (5 categories)
+
+  DAIRY STRENGTH (5): Stature, Heart Girth, Body Length,
+                      Body Depth, Angularity
+  RUMP (2):           Rump Angle, Rump Width
+  FEET & LEGS (3):    Rear Legs Set, Rear Legs Rear View, Foot Angle
+  UDDER (9):          Fore Udder Attachment, Rear Udder Height,
+                      Central Ligament, Udder Depth, Front Teat
+                      Placement, Teat Length, Rear Teat Placement,
+                      Rear Udder Width, Teat Thickness
+  GENERAL (1):        Body Condition Score (BCS)
+
+NDDB itself names 8 traits as subjective: Rear Legs Set, Rear Legs
+Rear View, Foot Angle, Fore Udder Attachment, Central Ligament,
+Front Teat Placement, Rear Teat Placement, BCS. Our confidence
+intervals are widest exactly on those 8 - that is domain honesty,
+quote it in the pitch.
+
+HOW EACH TRAIT IS MEASURED - three classes + the SMAL layer
+
+CLASS A - PURE ANGLES (no ruler needed -> build these FIRST):
+  Rump Angle, Foot Angle, Angularity, Rear Legs Set
+  Procedure: RTMPose keypoints -> take the 2-3 relevant keypoints
+  -> compute the angle with atan2. An angle does not change with
+  camera distance, so these are the most accurate and are demo-able
+  before the ear-tag ruler even works.
+
+CLASS B - RATIOS & POSITIONS (scale cancels out):
+  Front Teat Placement, Rear Teat Placement, Rear Legs Rear View,
+  Fore Udder Attachment, Central Ligament
+  Procedure: measure positions RELATIVE to nearby landmarks
+  (e.g. teat position relative to quarter width). Because both
+  numbers are in pixels at the same depth, the scale divides out.
+
+CLASS C - TRUE CENTIMETRE TRAITS (need the ear-tag ruler):
+  Stature, Body Length, Body Depth, Rump Width, Udder Depth,
+  Rear Udder Height, Rear Udder Width, Teat Length, Teat Thickness
+  Procedure: pixel distance between keypoints x mm-per-pixel from
+  solvePnP -> real cm. ALWAYS report with a confidence interval,
+  never a bare number.
+
+SMAL 3D LAYER - only where flat images fundamentally fail:
+  - Heart Girth: a circumference AROUND the body - invisible in any
+    single 2D view. Fit the SMAL 3D body model to keypoints +
+    silhouette -> slice the mesh behind the front legs -> the
+    cross-section perimeter IS the heart girth.
+  - BCS: score from 3D surface curvature of the pelvic/tailhead
+    region (fat cover shows as curvature - mirrors how vets palpate).
+  - Body volume: feeds the weight estimate in (c).
+  BUILD ORDER WARNING: SMAL fitting is research-grade and slow.
+  Build it LAST. The architecture survives without it: 19 of 20
+  traits score via A/B/C; Heart Girth falls back to a regression
+  estimate from body depth/width, BCS falls back to a 2D visual
+  model (public BCS image datasets exist).
+
+TURNING MEASUREMENTS INTO 1-9 SCORES
+  MVP: rule-based bands from the NDDB guideline (e.g. stature cm
+  ranges -> score). Transparent and fully explainable.
+  Upgrade: CORAL ordinal regression head - an output layer that
+  knows 7 lies between 6 and 8 (unlike plain classification).
+  Either way the measured value is stored as evidence.
+
+BUFFALO BRANCH (proves we read the source - ~5 lines of code)
+  Same scorecard, exactly 2 differences:
+  1. Rump-width reference landmarks differ for buffalo.
+  2. Teat length/thickness measured on the LEFT FRONT teat in
+     cattle but the LEFT REAR teat in buffalo.
+
+ELIGIBILITY GATE (refusing to score is a feature)
+  NDDB rules: score only in FIRST lactation, 30-90 days after
+  calving; udder photos ideally ~1 hour before evening milking
+  (a full vs empty udder changes Udder Depth). All checkable from
+  the BPA record via the tag. Ineligible -> the app says WHY and
+  refuses. Also refuse single traits when confidence is too low.
+
+FLOW
+  keypoints -> Class A angles -> Class B ratios -> [tag ruler ok?]
+  -> Class C cm -> [SMAL ok?] -> girth/BCS/volume -> band or CORAL
+  -> 20 scores + confidence + measured evidence -> JSON
+
+---------------------------------------------------------------------
+ FEATURE (c) - WEIGHT ESTIMATION
+---------------------------------------------------------------------
+WHAT IT IS
+Weight without a weighbridge (most Indian farms have none).
+
+HOW TO DO IT (procedure)
+1. PRIMARY - girth-length regression (the vet-accepted method):
+   weight = (heart_girth^2 x body_length) / K
+   Calibrate the constant K against real data: BPA's Growth
+   Monitoring module already stores Length/Girth/Weight for
+   millions of animals (in the demo: use the CowDatabase /
+   Mendeley public datasets as stand-in ground truth).
+2. CROSS-CHECK - SMAL mesh volume x bovine tissue density.
+   (Never volume-only: a cow is not uniform density - rumen fill
+   alone can swing ~30 kg.)
+3. Output a RANGE {low, high}, not a single number.
+
+FLOW
+  girth + length (from b) -> regression -> range -> cross-check
+  with SMAL volume if available -> JSON
+
+---------------------------------------------------------------------
+ FEATURE (d part 1) - AI VETERINARY PRE-SCREENING (vision side)
+---------------------------------------------------------------------
+WHAT IT IS
+The vision half of the full pre-screening pipeline (Person 3 builds
+the knowledge-graph half). Reuses what we ALREADY compute: the
+DINOv2 features, the segmentation masks, the keypoints, and the
+gait video. Output = a SYMPTOM VECTOR (a list of detected signs
+with confidences), which Person 3's Veterinary Knowledge Graph
+turns into disease risk estimates.
+FRAMING RULE for the demo and the deck: this is PRE-SCREENING and
+decision support - the app surfaces risks and says "refer to vet",
+it never announces a diagnosis on its own. Judges with vet
+backgrounds will test this line; holding it is what makes the
+feature credible instead of dangerous.
+
+HOW TO DO IT (procedure) - build in tiers, each tier demo-able
+TIER 1 (cheap, ships first):
+1. Lameness: from the 8-second walking video - track leg keypoints
+   across frames (RTMPose per frame), compute stride length and
+   left/right symmetry; asymmetric gait -> "locomotion_abnormal"
+   with a symmetry score.
+2. Very low BCS from (b) -> "poor_condition".
+TIER 2 (the differentiator):
+3. Anatomical region segmentation: split the animal mask into
+   regions (head/eyes/muzzle, skin/coat, udder, legs/hooves) using
+   the keypoints as anchors.
+4. Multi-task symptom heads on the shared DINOv2 features, one
+   small head per region: skin nodules/lesions (e.g. LSD-pattern),
+   wounds, eye/nasal discharge, udder swelling or asymmetry,
+   hoof abnormality. Train on public veterinary image datasets
+   (LSD image sets exist on Kaggle/Mendeley) - free.
+5. Posture check from keypoint geometry: arched back, head-down
+   stance, abnormal stance width.
+6. Assemble everything into symptom_vector[] with confidences ->
+   goes into the JSON for Person 3's knowledge graph + report.
+
+FLOW
+  shared features + masks + keypoints + gait video
+  -> region segmentation -> symptom heads + posture + gait checks
+  -> symptom vector -> (Person 3) VKG risk estimate + report
+  -> "refer to vet" escalation if urgent
+
+---------------------------------------------------------------------
+ FEATURE (g-generate) - OVERLAY DATA FOR EXPLAINABILITY
+---------------------------------------------------------------------
+For every scored trait, output in the JSON: which keypoint
+coordinates were used + the measured value + one plain-language
+sentence. Person 3 draws these on the photo server-side; Person 1
+displays them. (Person 2 only supplies coordinates and numbers.)
+
+=====================================================================
+=====================================================================
+ PERSON 3 - BACKEND + RECORDS + INTEGRATION (the spine)
+ Owns: (e) EHR + mocked BPA, (f-server) sync endpoint,
+       (g-draw) overlay rendering, (d part 2) knowledge graph +
+       screening reports, (i) chatbot, REPO OWNER
+ Tools: Python FastAPI, MongoDB Community (free, local), OpenCV
+        for drawing, GitHub free private repo
+=====================================================================
+=====================================================================
+
+---------------------------------------------------------------------
+ FEATURE (e) - ANIMAL RECORDS (EHR) + MOCKED BPA
+---------------------------------------------------------------------
+WHAT IT IS
+Every animal's longitudinal record keyed by its 12-digit Pashu
+Aadhaar: profile, all scoring sessions, weight trend, health flags.
+IMPORTANT HONESTY NOTE: there is NO public BPA API (ministry access
+comes only after winning). So we MOCK it and say so openly - judges
+respect that; pretending otherwise gets caught in Q&A.
+
+HOW TO DO IT (procedure)
+1. MongoDB collections:
+   animals:  {_id: "356279812345", species, breed, dob,
+              lactation_no, last_calving_date, owner, village}
+   sessions: {_id, animal_id, date, photos[], scores[],
+              weight, health_flags[], synced_from_device}
+2. Pre-load ~20 realistic fake animals (mix of cattle/buffalo,
+   some eligible, some NOT eligible - so the eligibility gate has
+   something to refuse on stage).
+3. FastAPI endpoints:
+   GET  /animal/{id}      -> profile + eligibility (computed from
+                             lactation + calving date)
+   POST /session          -> receive photos/video + metadata,
+                             call Person 2's score_animal(),
+                             store result, return the JSON
+   GET  /animal/{id}/history -> past sessions for trends
+4. Eligibility logic lives HERE (server), not in the app:
+   eligible = (lactation_no == 1) and (30 <= days_since_calving
+   <= 90). Return the reason string either way.
+
+FLOW
+  app request -> FastAPI -> Mongo lookup -> (scoring if new
+  session) -> store -> JSON back to app
+
+---------------------------------------------------------------------
+ FEATURE (f-server) - SYNC ENDPOINT
+---------------------------------------------------------------------
+1. POST /sync accepts a batch of queued sessions from the app.
+2. Idempotency rule: if a session with the same device-generated
+   id already exists, skip it (prevents duplicates when the app
+   retries after a half-failed upload).
+3. Return per-session status so the app can mark rows synced.
+
+---------------------------------------------------------------------
+ FEATURE (g-draw) - OVERLAY IMAGE RENDERING
+---------------------------------------------------------------------
+1. Take Person 2's overlay_points + measured value per trait.
+2. OpenCV: draw the points, the connecting lines, and the value
+   text on a copy of the original photo. One image per trait.
+3. Serve as static files: /overlays/{session_id}/{trait}.jpg
+   The app just loads the URL. (Cache them - draw once.)
+
+---------------------------------------------------------------------
+ FEATURE (d part 2) - VETERINARY KNOWLEDGE GRAPH + REPORTS
+---------------------------------------------------------------------
+WHAT IT IS
+The reasoning half of pre-screening. Person 2 sends a symptom
+vector; this layer turns it into deterministic disease risk
+estimates, matches against historic cases, and generates a
+plain-language report with escalation. Deterministic = the same
+symptoms always give the same risks, and every risk can be traced
+to exactly which symptoms fired (that IS the explainability - no
+black box between symptom and risk).
+
+HOW TO DO IT (procedure)
+1. Build the VKG as a simple graph (NetworkX, or even a JSON file
+   for MVP): nodes = symptoms and conditions; edges = "symptom S
+   is associated with condition C" with a weight. Populate ~10-15
+   common cattle/buffalo conditions (LSD, FMD signs, mastitis,
+   lameness causes, malnutrition) from public veterinary
+   references. Free, no training needed.
+2. Risk estimation: walk the graph from the fired symptoms ->
+   weighted sum per condition -> ranked risk list with the
+   contributing symptoms attached.
+3. Historic case matching: query MongoDB for past sessions with
+   similar symptom vectors (this animal AND herd-level - "3 animals
+   in this village flagged skin nodules this week" is an outbreak
+   signal - massive pitch point).
+4. Report generation: local LLM via Ollama (free) turns the
+   structured result into a short plain-language report for the
+   farmer + a technical one for the vet. The LLM only REPHRASES
+   the graph's output - it never invents medical content.
+5. Escalation: any high-risk flag -> notification entry for the
+   local veterinary officer (mock notification in demo) with the
+   report + photos attached.
+
+FLOW
+  symptom vector -> VKG walk -> ranked risks + which symptoms
+  fired -> historic/herd matching -> Ollama rephrases -> farmer
+  report + vet report -> escalate if urgent -> stored in EHR
+
+---------------------------------------------------------------------
+ FEATURE (i) - MULTILINGUAL VOICE/TEXT CHATBOT
+---------------------------------------------------------------------
+WHAT IT IS
+A farmer or field vet talks to the app in their own language and
+gets answers grounded in THIS animal's record - not generic advice.
+"Is her weight trend normal?" "When is she eligible for scoring?"
+"What did the last screening flag?"
+
+HOW TO DO IT (procedure)
+1. Speech-to-text: Whisper (free, runs locally / on the server) -
+   handles Hindi and major regional languages out of the box.
+2. RAG grounding: retrieve the animal's EHR (profile, sessions,
+   weight trend, health flags) + relevant VKG entries -> stuff
+   into the prompt context.
+3. Answering: local LLM via Ollama (free). System prompt rule:
+   answer ONLY from the provided record + VKG; care advice stays
+   general (feeding, hygiene, "consult your vet for treatment").
+4. Text-to-speech reply in the same language (free: Piper TTS or
+   Android's built-in TTS).
+5. Urgent-query rule: if the user describes emergency symptoms,
+   skip chat -> show the vet escalation flow from (d part 2).
+BUILD ORDER NOTE: build after (e), (f), (d part 2) are working,
+because it feeds on their data. For the demo, 3 well-rehearsed
+live questions beat 30 untested ones.
+
+FLOW
+  voice -> Whisper STT -> retrieve EHR + VKG -> Ollama answer
+  (grounded, general-advice-only) -> TTS reply -> escalate if
+  urgent
+
+---------------------------------------------------------------------
+ INTEGRATOR DUTIES (Person 3 owns these)
+---------------------------------------------------------------------
+1. Create the GitHub repo (free, private) day 1:
+     /app        Person 1 only
+     /ml         Person 2 only
+     /server     Person 3 only
+     /contract   scoring_result.json + api_examples.json (frozen)
+2. RULE: each person commits ONLY inside their own folder ->
+   merge conflicts become impossible.
+3. Daily habit for everyone:
+     end of session:   git add .  ->  git commit -m "what i did"
+                       ->  git push
+     start of session: git pull
+   No pendrives, no WhatsApp zips. Ever.
+4. Integration = Person 3 pulls, wires /ml into /server, serves
+   /app. Test on the demo animals after every merge.
+
+=====================================================================
+ BUILD ORDER (a demo exists at EVERY stage)
+=====================================================================
+
+PHASE 0 (day 1)
+  Repo created. Contract JSON frozen. All 3 laptops run hello-world
+  (Flutter app opens; FastAPI serves /ping; Python env imports
+  torch+cv2).
+
+PHASE 1 - PARALLEL, AGAINST MOCKS
+  P1: full app flow displaying the fake contract JSON.
+  P2: tag detection + RTMPose keypoints working on sample photos.
+  P3: server serving the fake JSON + Mongo with 20 fake animals.
+  (Nobody is blocked by anybody.)
+
+PHASE 2 - FIRST REAL INTEGRATION
+  Real photo -> Class A angle traits scored for real -> through
+  server -> displayed in app. Even with only 4/20 traits real,
+  this is a working end-to-end demo. From this day on you are
+  never in the "nothing works" zone again.
+
+PHASE 3 - FILL THE SCORECARD
+  Class B ratios -> ear-tag ruler -> Class C cm traits -> weight
+  regression -> overlays -> offline sync demo -> eligibility gate.
+
+PHASE 4 - THE DIFFERENTIATOR LAYER
+  (d) Tier 1: gait symmetry + BCS flags   [P2]
+  (d) VKG + risk estimates + reports      [P3, parallel with P2]
+  (d) Tier 2: region symptom heads        [P2]
+  (i) chatbot on top of EHR + VKG         [P3]
+
+PHASE 5 - STRETCH (only if everything above is green)
+  SMAL 3D (heart girth, BCS from curvature, volume) -> herd-level
+  outbreak view -> polish -> the 6-slide idea deck (PDF, max 6
+  slides).
+
+DEMO-DAY SAFETY NET
+  Keep one fully-scored session cached in the app. If live scoring
+  fails on stage, the app still walks the entire flow on cached
+  results. Never demo without the net.
+
+=====================================================================
+ PITCH AMMUNITION (memorize these)
+=====================================================================
+- BPA has 89.77 crore transactions across 34.22 crore animals -
+  but only 27,847 are Typing transactions. The typing module
+  exists and is essentially unused, because scoring needs a
+  trained classifier to visit the farm. Our app makes any phone
+  the classifier. (DAHD deck, ICAR Anand, Apr 2025)
+- 8 of 20 traits are officially subjective per NDDB's own
+  guideline - our system is honest about exactly those.
+- 1 and 9 are biological extremes, not bad/good.
+- Buffalo differs from cattle in exactly 2 documented ways.
+- We refuse to score ineligible animals - by NDDB's own rules.
+- No public BPA API exists - we mock it and say so.
+=====================================================================

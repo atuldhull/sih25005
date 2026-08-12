@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+server/venv/
+server/.venv/
+
+# Secrets - never commit
+.env
+*.env
+
+# Flutter / app build output
+app/build/
+app/.dart_tool/
+
+# Uploaded photos/videos during testing
+server/uploads/
+server/overlays/
+
+# ML weights and datasets (too big for git - share via Drive/Kaggle)
+ml/weights/
+ml/datasets/
+*.pt
+*.pth
+*.onnx
+
+# OS junk
+Thumbs.db
+.DS_Store
