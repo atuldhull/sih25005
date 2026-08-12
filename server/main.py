@@ -1,12 +1,17 @@
 from datetime import date, datetime
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pymongo import MongoClient
+
+from scoring import score_animal
 
 app = FastAPI(title="SIH25005 Backend")
 
 client = MongoClient("mongodb://127.0.0.1:27017", serverSelectionTimeoutMS=3000)
 db = client["sih25005"]
+
+UPLOAD_DIR = Path(__file__).parent / "uploads"
 
 
 def check_eligibility(animal: dict) -> tuple[bool, str]:
@@ -50,6 +55,58 @@ def get_animal(animal_id: str):
         "eligible": eligible,
         "eligible_reason": reason,
     }
+
+
+@app.post("/session")
+async def create_session(
+    animal_id: str = Form(...),
+    device_session_id: str = Form(...),
+    side_photo: UploadFile = File(...),
+    rear_photo: UploadFile = File(...),
+    gait_video: UploadFile = File(None),
+):
+    animal = db.animals.find_one({"_id": animal_id})
+    if animal is None:
+        raise HTTPException(status_code=404, detail="animal not found in BPA records")
+
+    # idempotency: the app may retry after a half-failed upload.
+    # Same device_session_id -> return the stored result, store nothing twice.
+    existing = db.sessions.find_one({"session_id": device_session_id})
+    if existing is not None:
+        response = dict(existing["result"])
+        response["duplicate"] = True
+        return response
+
+    eligible, reason = check_eligibility(animal)
+    if not eligible:
+        raise HTTPException(status_code=422, detail=f"animal not eligible: {reason}")
+
+    session_dir = UPLOAD_DIR / device_session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    saved = {}
+    for filename, upload in [("side.jpg", side_photo), ("rear.jpg", rear_photo),
+                             ("gait.mp4", gait_video)]:
+        if upload is not None:
+            (session_dir / filename).write_bytes(await upload.read())
+            saved[filename] = str(session_dir / filename)
+
+    result = score_animal(saved.get("side.jpg"), saved.get("rear.jpg"),
+                          saved.get("gait.mp4"), animal)
+    result["session_id"] = device_session_id
+    result["eligible"] = eligible
+    result["eligible_reason"] = reason
+
+    weight = result["weight_kg"]
+    db.sessions.insert_one({
+        "session_id": device_session_id,
+        "animal_id": animal_id,
+        "date": date.today().isoformat(),
+        "weight_kg_mid": (weight["low"] + weight["high"]) // 2,
+        "health_flags": result["health_flags"],
+        "files": saved,
+        "result": dict(result),
+    })
+    return result
 
 
 @app.get("/animal/{animal_id}/history")

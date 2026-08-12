@@ -34,7 +34,10 @@
       "rear_photo": "(file)",
       "gait_video": "(file)"
     },
-    "response": "the full scoring_result.json object (see scoring_result.json)"
+    "response": "the full scoring_result.json object (see scoring_result.json)",
+    "response_on_retry": "same object with extra field duplicate:true - the app treats it as success and marks the queued session synced",
+    "error_404": { "detail": "animal not found in BPA records" },
+    "error_422": { "detail": "animal not eligible: not in first lactation (currently lactation 2)" }
   },
 
   "GET /animal/{animal_id}/history": {
