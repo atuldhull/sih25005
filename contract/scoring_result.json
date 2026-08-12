@@ -50,8 +50,14 @@
     { "symptom": "gait_asymmetry", "confidence": 0.78, "region": "legs", "source": "video" }
   ],
   "risk_report": [
-    { "condition": "lameness (hoof origin)", "risk": "medium", "because_of": ["gait_asymmetry"], "action": "refer to vet" }
+    { "condition": "hoof_lameness", "label": "Lameness (hoof origin)", "urgency": "medium", "risk": "medium", "score": 0.42, "because_of": ["gait_asymmetry"], "action": "refer to vet" }
   ],
+  "herd_alerts": [],
+  "reports": {
+    "farmer": "plain-language summary for the farmer (always ends with the not-a-diagnosis disclaimer)",
+    "vet": "technical summary for the veterinary officer"
+  },
+  "escalated": false,
   "health_flags": ["locomotion_abnormal"],
 
   "captured_at": "2026-08-12T10:30:00+05:30",

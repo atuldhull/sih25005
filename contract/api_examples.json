@@ -61,6 +61,14 @@
     "rule": "exists -> app marks it synced locally; missing -> app re-uploads it via POST /session (which is retry-safe and returns duplicate:true if it actually arrived)"
   },
 
+  "GET /alerts": {
+    "purpose": "vet officer's notification feed - escalated screenings (high risk or herd outbreak signal), newest first",
+    "response": { "alerts": [
+      { "animal_id": "356279812345", "village": "Anand", "date": "2026-08-12",
+        "top_risks": ["hoof_lameness"], "herd_alerts": [], "report_vet": "..." }
+    ] }
+  },
+
   "GET /overlays/{session_id}/{trait_name}.jpg": {
     "purpose": "the explainability image for one trait (photo with keypoints + measurement drawn)",
     "response": "static JPEG file"

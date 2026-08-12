@@ -1,0 +1,90 @@
+{
+  "_comment": "Veterinary Knowledge Graph v1. Conditions with weighted symptom associations, compiled from public veterinary references. The symptom names used here ARE the official vocabulary for Person 2's symptom detection heads - do not invent new names without updating this file. This layer is PRE-SCREENING support, never a diagnosis.",
+
+  "conditions": {
+    "lumpy_skin_disease": {
+      "label": "Lumpy Skin Disease (LSD)",
+      "urgency": "high",
+      "symptoms": { "skin_nodules": 0.9, "reduced_activity": 0.2, "poor_condition": 0.2 },
+      "advice_farmer": "Firm lumps on the skin can spread to other animals. Keep this animal separate and do not share feed or water troughs.",
+      "advice_vet": "Nodular skin lesions consistent with capripox. Notifiable - isolate, confirm clinically, initiate ring vaccination protocol per state guidelines."
+    },
+    "foot_and_mouth_disease": {
+      "label": "Foot and Mouth Disease (FMD)",
+      "urgency": "high",
+      "symptoms": { "mouth_lesions": 0.8, "drooling": 0.7, "gait_asymmetry": 0.4, "reduced_activity": 0.3 },
+      "advice_farmer": "Sores in the mouth with heavy drooling spread very fast. Keep the animal away from the herd and inform your veterinary officer today.",
+      "advice_vet": "Vesicular oral lesions + ptyalism + lameness pattern. Notifiable - restrict movement, report to block veterinary officer, sample per FMD protocol."
+    },
+    "mastitis": {
+      "label": "Mastitis",
+      "urgency": "medium",
+      "symptoms": { "udder_swelling": 0.8, "udder_asymmetry": 0.6, "udder_redness": 0.7 },
+      "advice_farmer": "The udder looks swollen or uneven. Milk this animal last, keep the udder clean, and have the milk checked.",
+      "advice_vet": "Visible udder inflammation/asymmetry. Recommend CMT on all quarters, milk culture if available, review milking hygiene."
+    },
+    "hoof_lameness": {
+      "label": "Lameness (hoof origin)",
+      "urgency": "medium",
+      "symptoms": { "gait_asymmetry": 0.8, "hoof_abnormality": 0.8, "arched_back": 0.3 },
+      "advice_farmer": "The animal is not walking evenly. Check the hooves for stones, cracks or smell, and keep it on soft dry ground.",
+      "advice_vet": "Gait asymmetry with hoof abnormality. Recommend hoof examination and trimming; rule out foot rot / sole ulcer / white line disease."
+    },
+    "pinkeye": {
+      "label": "Infectious keratoconjunctivitis (pinkeye)",
+      "urgency": "medium",
+      "symptoms": { "eye_cloudiness": 0.8, "eye_discharge": 0.7 },
+      "advice_farmer": "The eye looks cloudy or watery. Keep the animal in shade away from dust and flies, and show it to a vet.",
+      "advice_vet": "Ocular opacity/epiphora pattern. Examine for corneal ulceration; fly control for the herd; early topical treatment prevents blindness."
+    },
+    "respiratory_infection": {
+      "label": "Respiratory infection",
+      "urgency": "medium",
+      "symptoms": { "nasal_discharge": 0.7, "reduced_activity": 0.4, "head_down_stance": 0.4 },
+      "advice_farmer": "Runny nose with low energy can be a chest infection. Give clean water, shade and rest, and call the vet if it does not improve in a day.",
+      "advice_vet": "Nasal discharge with depression. Auscultate, check temperature; consider BRD complex, especially with recent transport/weather stress."
+    },
+    "ringworm": {
+      "label": "Ringworm (fungal skin infection)",
+      "urgency": "low",
+      "symptoms": { "circular_skin_patches": 0.9, "dull_coat": 0.3 },
+      "advice_farmer": "Round grey patches on the skin usually heal but can spread to people and other animals. Avoid touching them with bare hands.",
+      "advice_vet": "Circular alopecic crusted lesions consistent with dermatophytosis. Zoonotic - advise handling hygiene; topical antifungal if extensive."
+    },
+    "tick_infestation": {
+      "label": "Tick infestation",
+      "urgency": "low",
+      "symptoms": { "ticks_visible": 0.9, "dull_coat": 0.4, "poor_condition": 0.3 },
+      "advice_farmer": "Ticks drink blood and weaken the animal. Remove visible ticks and ask the vet about spray or pour-on treatment.",
+      "advice_vet": "Visible ectoparasite load. Recommend acaricide program and pasture management; monitor for tick-borne disease signs (theileriosis, babesiosis)."
+    },
+    "bloat": {
+      "label": "Bloat (ruminal tympany)",
+      "urgency": "high",
+      "symptoms": { "distended_abdomen": 0.9, "arched_back": 0.4, "reduced_activity": 0.4 },
+      "advice_farmer": "A swollen left side after eating can be dangerous within hours. Walk the animal slowly and call the vet immediately.",
+      "advice_vet": "Left flank distension pattern. Time-critical - assess for frothy vs free-gas bloat; stomach tube / trocar per severity."
+    },
+    "malnutrition": {
+      "label": "Malnutrition / negative energy balance",
+      "urgency": "medium",
+      "symptoms": { "poor_condition": 0.8, "dull_coat": 0.5 },
+      "advice_farmer": "The animal is thinner than it should be. Increase green fodder and ask about mineral mixture; also ask the vet to check for worms.",
+      "advice_vet": "Low BCS with poor coat. Review ration energy/protein density; recommend fecal egg count and deworming per result."
+    },
+    "wound_abscess": {
+      "label": "Wound / abscess",
+      "urgency": "medium",
+      "symptoms": { "wounds": 0.9 },
+      "advice_farmer": "There is a visible wound. Clean it with dilute antiseptic and keep flies away; see a vet if it is deep or swollen.",
+      "advice_vet": "Visible skin lesion/swelling. Assess depth and infection; debride/drain as indicated; tetanus risk if deep puncture."
+    },
+    "general_weakness": {
+      "label": "General weakness / systemic illness",
+      "urgency": "medium",
+      "symptoms": { "head_down_stance": 0.5, "reduced_activity": 0.6, "poor_condition": 0.5 },
+      "advice_farmer": "The animal looks dull and low on energy. Give shade, water and easy feed, and have a vet examine it soon.",
+      "advice_vet": "Nonspecific depression posture. Broad differential - recommend full clinical exam including temperature, mucous membranes, rumen motility."
+    }
+  }
+}

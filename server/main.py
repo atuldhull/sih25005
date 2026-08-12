@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pymongo import MongoClient
 
+import reports
+import vkg
 from overlays import render_overlay
 from scoring import score_animal
 
@@ -105,6 +107,32 @@ async def create_session(
     result["eligible"] = eligible
     result["eligible_reason"] = reason
 
+    # screening layer: deterministic risk estimation from the symptom
+    # vector (Person 2's detectors fill it; the VKG reasons over it)
+    risks = vkg.estimate_risks(result["symptom_vector"])
+    result["risk_report"] = risks
+
+    herd_alerts = []
+    for s in result["symptom_vector"]:
+        others = vkg.herd_symptom_count(db, animal["village"], s["symptom"])
+        if others + 1 >= vkg.OUTBREAK_MIN_ANIMALS:
+            herd_alerts.append({"symptom": s["symptom"],
+                                "village": animal["village"],
+                                "animals_affected_14d": others + 1})
+    result["herd_alerts"] = herd_alerts
+    result["reports"] = reports.build_reports(animal, risks,
+                                              result["symptom_vector"], herd_alerts)
+    result["escalated"] = vkg.needs_escalation(risks) or bool(herd_alerts)
+    if result["escalated"]:
+        db.vet_alerts.insert_one({
+            "animal_id": animal_id,
+            "village": animal["village"],
+            "date": date.today().isoformat(),
+            "top_risks": [r["condition"] for r in risks[:3]],
+            "herd_alerts": list(herd_alerts),
+            "report_vet": result["reports"]["vet"],
+        })
+
     weight = result["weight_kg"]
     db.sessions.insert_one({
         "session_id": device_session_id,
@@ -162,6 +190,15 @@ def get_overlay(session_id: str, trait_file: str):
               else files.get("side.jpg"))
     render_overlay(source, trait, cached)
     return FileResponse(cached, media_type="image/jpeg")
+
+
+@app.get("/alerts")
+def get_alerts():
+    """The vet officer's mock notification feed: escalated screenings,
+    newest first. In production this would push to the officer's BPA
+    dashboard - in the demo it's this endpoint + a screen in the app."""
+    return {"alerts": list(db.vet_alerts.find({}, {"_id": 0})
+                           .sort("date", -1).limit(20))}
 
 
 @app.get("/animal/{animal_id}/history")
