@@ -71,10 +71,24 @@
       "language": "en",
       "model": "ollama:qwen2.5:7b  (or 'template' when the local LLM is unavailable - same facts, canned phrasing)",
       "escalate": false,
+      "sources": ["traits.md - Rump Angle  (which reference-corpus sections grounded the answer; empty for pure record answers - the app can show these as 'from official guidelines')"],
       "disclaimer": "shown under every answer in the app"
     },
     "rule": "if escalate is true the app shows the urgent-vet banner prominently; emergency keywords in any supported language trigger it",
     "error_404": { "detail": "animal not found in BPA records" }
+  },
+
+  "POST /chat/voice": {
+    "purpose": "spoken version of /chat: farmer records a question, server transcribes locally (whisper), answers with the same grounding rules, and returns a spoken reply WAV when a matching voice exists",
+    "content_type": "multipart/form-data",
+    "fields": { "animal_id": "356279812345", "audio": "(file - wav/mp3/ogg recording)" },
+    "response": "same object as POST /chat plus: heard (the transcribed question) and audio_url (path to the reply WAV, or null - the app MUST handle null by showing text only)",
+    "error_422": { "detail": "could not understand the audio - please record again closer to the phone" }
+  },
+
+  "GET /voice-audio/{fname}": {
+    "purpose": "fetch the spoken reply WAV referenced by audio_url",
+    "response": "audio/wav file"
   },
 
   "GET /alerts": {

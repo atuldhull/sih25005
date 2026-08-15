@@ -97,9 +97,12 @@ def validate(result: dict, mode: str = "pipeline") -> list[str]:
     if not isinstance(w, dict):
         p.append("'weight_kg' must be an object {low, high, method, ...}")
     else:
-        for k in ("low", "high", "method"):
-            if k not in w:
-                p.append(f"weight_kg: missing '{k}'")
+        if "method" not in w:
+            p.append("weight_kg: missing 'method'")
+        for k in ("low", "high"):
+            if not isinstance(w.get(k), (int, float)):
+                p.append(f"weight_kg: '{k}' must be a number, "
+                         f"got {type(w.get(k)).__name__}")
         if isinstance(w.get("low"), (int, float)) and \
            isinstance(w.get("high"), (int, float)) and w["low"] > w["high"]:
             p.append("weight_kg: low > high")
@@ -109,7 +112,13 @@ def validate(result: dict, mode: str = "pipeline") -> list[str]:
        set(cap or {}) != {"side_photo", "rear_photo", "gait_video"}:
         p.append("'captured' must be {side_photo, rear_photo, gait_video} booleans")
 
-    for i, s in enumerate(result.get("symptom_vector") or []):
+    # None where a list belongs crashes downstream iteration - reject it
+    for key in ("symptom_vector", "health_flags"):
+        if key in result and not isinstance(result.get(key), list):
+            p.append(f"'{key}' must be a list, got {type(result.get(key)).__name__}")
+
+    sv = result.get("symptom_vector")
+    for i, s in enumerate(sv if isinstance(sv, list) else []):
         for k in ("symptom", "confidence", "region", "source"):
             if k not in s:
                 p.append(f"symptom_vector[{i}]: missing '{k}'")

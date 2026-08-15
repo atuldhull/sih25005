@@ -28,6 +28,7 @@ import re
 
 import httpx
 
+import rag
 from reports import DISCLAIMER
 from rules import check_eligibility
 
@@ -56,6 +57,13 @@ _EMERGENCY = [re.compile(p, re.IGNORECASE) for p in [
     r"\bdying\b", r"\bmar (rahi|raha|gayi|gaya)\b",
     "मर रही", "मर रहा", "मर गई", "मर गयी", "मर गया",
 ]]
+
+# definitional questions ("what does X mean?") route to the knowledge
+# corpus instead of the animal-record intents
+_KNOWLEDGE_Q = re.compile(
+    r"\bwhat (is|are|does)\b|\bmean(s|ing)?\b|\bwhy\b|\bhow (is|does|do)\b|"
+    r"\bexplain\b|kya h(ai|ota)|matlab|kyu\b|kyon\b|"
+    r"क्या है|क्या होता|क्यों|मतलब|कैसे", re.IGNORECASE)
 
 # messages that try to change the bot's rules go straight to templates
 _INJECTION = re.compile(
@@ -149,7 +157,7 @@ def _context_text(ctx: dict) -> str:
 
 _SYSTEM = """You are a livestock care assistant inside a government cattle and buffalo scoring app, replying to a farmer.
 STRICT RULES:
-- Answer using ONLY the ANIMAL RECORD provided. If the record does not contain the answer, say you do not have that information and suggest asking the veterinary officer.
+- Answer using ONLY the ANIMAL RECORD and the REFERENCE INFORMATION provided. If neither contains the answer, say you do not have that information and suggest asking the veterinary officer.
 - Never state a disease as certain. Only mention risks exactly as the record states them, and always direct treatment questions to the veterinary officer.
 - General care advice (clean water, shade, fodder, hygiene, rest) is allowed. Medicines and doses are NOT - vet only.
 - Keep it under 100 simple words. Be warm and practical.
@@ -184,8 +192,11 @@ def _ask_ollama(context_text: str, message: str, lang: str) -> str | None:
         return None
 
 
-def _template_answer(ctx: dict, message: str, lang: str) -> str:
-    """Deterministic fallback: keyword intents over the same facts."""
+def _template_answer(ctx: dict, message: str, lang: str) -> str | None:
+    """Deterministic fallback: keyword intents over the record facts.
+    Returns None when no record intent matches - the caller then tries
+    the knowledge corpus. Record answers ALWAYS win over definitions:
+    'what is her weight' is about the animal, not about the concept."""
     low = message.lower()
     a, ls = ctx["animal"], ctx["latest_session"]
     hi = lang == "hi"
@@ -246,6 +257,18 @@ def _template_answer(ctx: dict, message: str, lang: str) -> str:
                     "traits were scored. Open the scorecard screen for details.")
         return no_session_line()
 
+    return None  # no record intent - caller may try the knowledge corpus
+
+
+def _knowledge_answer(hit: dict, hi: bool) -> str:
+    body = hit["text"]
+    if len(body) > 450:
+        body = body[:450].rsplit(" ", 1)[0] + "..."
+    prefix = "जानकारी (अंग्रेज़ी में) - " if hi else ""
+    return f"{prefix}{hit['title']}: {body}"
+
+
+def _default_line(hi: bool) -> str:
     return ("मैं इस पशु के वज़न, स्कोर, पात्रता और सेहत जांच के बारे में बता सकता हूं। इलाज के लिए पशु चिकित्सक से मिलें।" if hi else
             "I can tell you about this animal's weight, scores, eligibility and "
             "health screenings. For treatment, please contact the veterinary officer.")
@@ -263,14 +286,35 @@ def answer(db, animal: dict, message: str) -> dict:
     ctx = build_context(db, animal)
     escalate = is_emergency(message)
     injected = bool(_INJECTION.search(message))
+    knowledge_q = bool(_KNOWLEDGE_Q.search(message))
+
+    # retrieve from OUR reference corpus (local embeddings over
+    # server/knowledge/*.md - strictly our own data)
+    strong_hits = []
+    try:
+        strong_hits = [h for h in rag.search(db, message, k=2) if rag.is_strong(h)]
+    except Exception:
+        pass
 
     text = None
     # emergencies never wait on an LLM; rule-rewriting attempts never reach it
     if not escalate and not injected:
-        text = _ask_ollama(_context_text(ctx), message, lang)
+        context_text = _context_text(ctx)
+        if strong_hits:
+            refs = "\n".join(f"- {h['title']}: {h['text']}" for h in strong_hits)
+            context_text += f"\n\nREFERENCE INFORMATION (official guideline notes):\n{refs}"
+        text = _ask_ollama(context_text, message, lang)
     model = f"ollama:{CHAT_MODEL}" if text else "template"
+    used_knowledge = bool(text and strong_hits)  # LLM saw the references
     if text is None:
-        text = _template_answer(ctx, message, lang)
+        hi = lang == "hi"
+        text = _template_answer(ctx, message, lang)  # record intents first
+        if text is None:
+            if knowledge_q and strong_hits:
+                text = _knowledge_answer(strong_hits[0], hi)
+                used_knowledge = True
+            else:
+                text = _default_line(hi)
 
     if escalate:
         text = _URGENT_LINE[lang] + "\n\n" + text
@@ -281,5 +325,7 @@ def answer(db, animal: dict, message: str) -> dict:
         "language": lang,
         "model": model,
         "escalate": escalate,
+        "sources": ([f"{h['source']} - {h['title']}" for h in strong_hits]
+                    if used_knowledge else []),
         "disclaimer": DISCLAIMER,
     }

@@ -73,8 +73,11 @@ def main():
                                        "message": "what is her weight?"})
         body = r.json()
         assert body["model"] == "template"
-        assert "kg" in body["answer"]
-        print(f"PASS  template weight answer: {body['answer'][:60]}...")
+        # must be HER weight from the record, not the weight-concept
+        # definition from the knowledge corpus
+        assert "kg" in body["answer"] and "session" in body["answer"], body["answer"]
+        assert body["sources"] == [], "record answers cite no corpus"
+        print(f"PASS  template weight answer from record: {body['answer'][:60]}...")
 
         r2 = client.post("/chat", json={"animal_id": ELIGIBLE,
                                         "message": "वज़न कितना है?"})
