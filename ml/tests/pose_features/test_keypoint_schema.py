@@ -1,12 +1,12 @@
-"""Tests for the canonical keypoint schema and normalize_keypoints() seam."""
+﻿"""Tests for the canonical keypoint schema and normalize_keypoints() seam."""
 
 import sys
 
 import pytest
 
-sys.path.insert(0, "ml_pipeline")
 
-from pose_features.keypoint_schema import (  # noqa: E402
+
+from ml.pose_features.keypoint_schema import (  # noqa: E402
     KEYPOINT_NAMES,
     KEYPOINT_SCHEMA,
     MISSING_JOINT,
@@ -99,7 +99,7 @@ class TestIdentity:
 # ---------------------------------------------------------------------------
 class TestMeasurementInterop:
     def test_normalized_output_drives_full_measurement(self):
-        from measurement.traits import measure_all_traits
+        from ml.measurement.traits import measure_all_traits
 
         full = {
             "withers": (300, 120, 0.95), "back_mid": (430, 140, 0.95),
@@ -120,7 +120,7 @@ class TestMeasurementInterop:
         assert sum(1 for m in measurements if m.value is not None) == 20
 
     def test_zero_conf_joint_marks_dependent_traits_not_measurable(self):
-        from measurement.traits import measure_all_traits
+        from ml.measurement.traits import measure_all_traits
 
         partial = {
             "withers": (300, 120, 0.95), "chest_bottom": (300, 380, 0.95),

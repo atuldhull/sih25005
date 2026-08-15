@@ -1,9 +1,9 @@
-"""Explainability assembler: human-readable explanations and overlay geometry per trait."""
+﻿"""Explainability assembler: human-readable explanations and overlay geometry per trait."""
 
 from typing import Dict, List
 
-from common.schemas import MeasurementResult, ScoreResult
-from config.traits import get_trait
+from ml.common.schemas import MeasurementResult, ScoreResult
+from ml.config.traits import get_trait
 
 
 def _confidence_band(confidence: float) -> str:

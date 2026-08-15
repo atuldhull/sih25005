@@ -1,9 +1,16 @@
-"""Detect animals and ear tags using RT-DETR, with SAM2 foreground segmentation.
+﻿"""Detect animals and ear tags using RT-DETRv2 (HuggingFace transformers), with SAM2
+foreground segmentation.
 
-Inference wiring only — no training code. Loads pretrained/fine-tuned checkpoints
-from config/detection.py. Both backends degrade gracefully: RT-DETR unavailability
-raises DetectionBackendError, while SAM2 unavailability falls back to a rectangular
-mask (segmentation_degraded=True) instead of crashing.
+Inference wiring only - no training code. Loads a fine-tuned checkpoint (exported in
+HuggingFace format) from config/detection.py. Both backends degrade gracefully:
+RT-DETRv2 unavailability raises DetectionBackendError, while SAM2 unavailability
+falls back to a rectangular mask (segmentation_degraded=True) instead of crashing.
+
+CHANGED (REVIEW-ml-dev.md B4): the Ultralytics/YOLO backend has been removed
+entirely. Ultralytics is AGPL-licensed, which conflicts with this project's
+licensing stance (see architecture doc Section 16: "RT-DETRv2 over YOLO/Ultralytics
+- matches the project's license constraints"). This module now loads RT-DETRv2
+exclusively via HuggingFace `transformers` (Apache-2.0), which is license-safe.
 """
 
 import os
@@ -11,9 +18,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from PIL import Image
 
-from common.schemas import DetectionResult
-from config.detection import (
+from ml.common.schemas import DetectionResult
+from ml.config.detection import (
     CANONICAL_CLASS_NAMES,
     DEFAULT_DEVICE,
     DEBUG_DIR,
@@ -34,6 +42,7 @@ class DetectionLabelError(ValueError):
 
 
 _rt_detr_model: Any = None
+_rt_detr_processor: Any = None
 _sam2_predictor: Any = None
 
 
@@ -41,7 +50,7 @@ def validate_label_map() -> None:
     """Fail loudly if the configured label map references anything non-canonical.
 
     This is the guard against a checkpoint whose native labels don't match
-    "animal"/"ear_tag" — a mismatched config must error, not mislabel.
+    "animal"/"ear_tag" - a mismatched config must error, not mislabel.
     """
     bad_values = {
         raw: cls for raw, cls in RAW_LABEL_TO_CLASS_NAME.items()
@@ -55,9 +64,9 @@ def validate_label_map() -> None:
 
 
 def map_class_name(raw_label: Any) -> str:
-    """Map a checkpoint's raw label (int index or string) to a canonical class name.
+    """Map a checkpoint's raw label (int index) to a canonical class name.
 
-    Raises DetectionLabelError if the label is not in the configured map — a
+    Raises DetectionLabelError if the label is not in the configured map - a
     loud failure intended to surface checkpoint/training mismatches early.
     """
     validate_label_map()
@@ -83,115 +92,91 @@ def resolve_device(device: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# RT-DETR
+# RT-DETRv2 (HuggingFace transformers)
 # ---------------------------------------------------------------------------
-def load_rt_detr(device: str = DEFAULT_DEVICE) -> Any:
-    """Lazily load and cache the RT-DETR model (ultralytics or rtdetr-pytorch)."""
-    global _rt_detr_model
+def load_rt_detr(device: str = DEFAULT_DEVICE) -> Tuple[Any, Any]:
+    """Lazily load and cache the RT-DETRv2 model + image processor.
+
+    Returns (model, image_processor). RTDETR_MODEL_PATH must be a directory in
+    HuggingFace format (config.json + weights + preprocessor_config.json) -
+    see config/detection.py for the expected export procedure.
+    """
+    global _rt_detr_model, _rt_detr_processor
     if _rt_detr_model is not None:
-        return _rt_detr_model
+        return _rt_detr_model, _rt_detr_processor
 
     resolved = resolve_device(device)
 
-    # Preferred backend: ultralytics YOLO wrapper (loads RT-DETRv2 checkpoints).
     try:
-        from ultralytics import YOLO
-    except ImportError:
-        YOLO = None
-
-    if YOLO is not None:
-        if not os.path.exists(RTDETR_MODEL_PATH):
-            raise DetectionBackendError(
-                f"RT-DETR weights not found at {RTDETR_MODEL_PATH}."
-            )
-        try:
-            model = YOLO(RTDETR_MODEL_PATH)
-            model.to(device=resolved) if resolved == "cuda" else model.cpu()
-            _rt_detr_model = model
-            return _rt_detr_model
-        except Exception as exc:
-            raise DetectionBackendError(f"Failed to load RT-DETR via ultralytics: {exc}") from exc
-
-    # Fallback backend: lyuwenyu/RT-DETR (rtdetr-pytorch). Model variant and
-    # post-processor are configured from the same weights path when available.
-    try:
-        from rtdetr.models import build_model  # type: ignore
-        from rtdetr.config import get_cfg  # type: ignore
+        from transformers import AutoImageProcessor, RTDetrV2ForObjectDetection
     except ImportError as exc:
         raise DetectionBackendError(
-            "Neither 'ultralytics' nor 'rtdetr-pytorch' is installed, and "
-            f"RT-DETR weights ({RTDETR_MODEL_PATH}) were not found."
+            "'transformers' is not installed. Install it with `pip install "
+            "transformers` to use the RT-DETRv2 detection backend."
         ) from exc
 
-    raise DetectionBackendError(
-        "RT-DETRv2 backend configured but requires explicit model/config wiring; "
-        "install 'ultralytics' and point RTDETR_MODEL_PATH at a fine-tuned checkpoint."
-    )
+    if not os.path.isdir(RTDETR_MODEL_PATH):
+        raise DetectionBackendError(
+            f"RT-DETRv2 model directory not found at {RTDETR_MODEL_PATH}. Expected "
+            "a HuggingFace-format export (config.json + weights + "
+            "preprocessor_config.json), not a single checkpoint file."
+        )
+
+    try:
+        model = RTDetrV2ForObjectDetection.from_pretrained(RTDETR_MODEL_PATH)
+        processor = AutoImageProcessor.from_pretrained(RTDETR_MODEL_PATH)
+        model.to(resolved)
+        model.eval()
+    except Exception as exc:
+        raise DetectionBackendError(
+            f"Failed to load RT-DETRv2 via transformers: {exc}"
+        ) from exc
+
+    _rt_detr_model = model
+    _rt_detr_processor = processor
+    return _rt_detr_model, _rt_detr_processor
 
 
-def _parse_predictions(preds: Any, names: Optional[Dict[int, str]] = None) -> List[Dict[str, Any]]:
-    """Normalize raw inference output into [{label, score, bbox(0-indexed xyxy)}]."""
+def _run_detector(
+    image_bgr: np.ndarray,
+    model_and_processor: Tuple[Any, Any],
+    threshold: float = RTDETR_CONFIDENCE_THRESHOLD,
+) -> List[Dict[str, Any]]:
+    """Run RT-DETRv2 over a BGR image (as loaded by cv2.imread) and return
+    normalized detections: [{label: int, score: float, bbox: (x1,y1,x2,y2)}].
+    """
+    import torch
+
+    model, processor = model_and_processor
+
+    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    pil_image = Image.fromarray(image_rgb)
+
+    try:
+        inputs = processor(images=pil_image, return_tensors="pt")
+        device = next(model.parameters()).device
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = model(**inputs)
+
+        # target_sizes expects (height, width) per image.
+        target_sizes = torch.tensor([pil_image.size[::-1]])
+        results = processor.post_process_object_detection(
+            outputs, target_sizes=target_sizes, threshold=threshold
+        )[0]
+    except Exception as exc:
+        raise DetectionBackendError(f"RT-DETRv2 inference failed: {exc}") from exc
+
     detections: List[Dict[str, Any]] = []
-    if not isinstance(preds, (list, tuple)):
-        preds = [preds]
-    for result in preds:
-        if result is None:
-            continue
-        if isinstance(result, dict):
-            # Already-normalized prediction dicts are passed through directly.
-            if "bbox" in result and "label" in result and "score" in result:
-                detections.append({
-                    "label": result["label"],
-                    "score": float(result["score"]),
-                    "bbox": _pad_bbox(result["bbox"]),
-                })
-                continue
-            boxes = result.get("boxes") or result.get("box")
-            scores = result.get("scores") or result.get("score")
-            labels = result.get("labels") or result.get("label")
-            if boxes is None:
-                continue
-            boxes_np = _to_numpy(boxes).reshape(-1, 4)
-            labels_arr = _to_numpy(labels) if labels is not None else np.zeros(len(boxes_np))
-            scores_arr = _to_numpy(scores) if scores is not None else np.ones(len(boxes_np))
-            for box, label, score in zip(boxes_np, labels_arr, scores_arr):
-                detections.append({
-                    "label": label.item() if hasattr(label, "item") else label,
-                    "score": float(score),
-                    "bbox": _pad_bbox(box),
-                })
-        elif hasattr(result, "boxes") and hasattr(result, "names"):
-            result_names = getattr(result, "names", {}) or {}
-            boxes = result.boxes
-            xyxy = getattr(boxes, "xyxy", None)
-            conf = getattr(boxes, "conf", None)
-            cls = getattr(boxes, "cls", None)
-            if xyxy is None:
-                continue
-            for row, conf_row, cls_row in zip(
-                _to_numpy(xyxy), _to_numpy(conf), _to_numpy(cls)
-            ):
-                cls_id = int(cls_row)
-                detections.append({
-                    "label": result_names.get(cls_id, cls_id),
-                    "score": float(conf_row),
-                    "bbox": _pad_bbox(row),
-                })
-        elif isinstance(result, (list, tuple)) and len(result) >= 3:
-            # rtdetr style: (scores, labels, boxes)
-            scores, labels, boxes = result[0], result[1], result[2]
-            boxes_np = _to_numpy(boxes).reshape(-1, 4)
-            labels_np = _to_numpy(labels)
-            scores_np = _to_numpy(scores)
-            for i, box in enumerate(boxes_np):
-                detections.append({
-                    "label": int(labels_np[i]),
-                    "score": float(scores_np[i]),
-                    "bbox": _pad_bbox(box),
-                })
-    if names is not None:
-        for d in detections:
-            d["label"] = names.get(d["label"], d["label"])
+    for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
+        detections.append(
+            {
+                "label": int(label.item()),
+                "score": float(score.item()),
+                "bbox": _pad_bbox(box.detach().cpu().numpy()),
+            }
+        )
     return detections
 
 
@@ -203,27 +188,6 @@ def _pad_bbox(box) -> Tuple[float, float, float, float]:
     return (float(vals[0]), float(vals[1]), float(vals[2]), float(vals[3]))
 
 
-def _to_numpy(obj) -> np.ndarray:
-    """Coerce tensors/lists/arrays to a numpy array, detaching to CPU first."""
-    if hasattr(obj, "detach"):
-        obj = obj.detach()
-    if hasattr(obj, "cpu"):
-        obj = obj.cpu()
-    return np.asarray(obj)
-
-
-def _run_detector(image_bgr: np.ndarray, model: Any) -> List[Dict[str, Any]]:
-    """Run a loaded detector over an image and normalize its output."""
-    try:
-        if hasattr(model, "predict"):
-            raw = model.predict(image_bgr, verbose=False)
-        else:
-            raw = model(image_bgr)
-    except Exception as exc:
-        raise DetectionBackendError(f"RT-DETR inference failed: {exc}") from exc
-    return _parse_predictions(raw)
-
-
 def detect_animal(image_path: str, device: str = DEFAULT_DEVICE) -> Optional[DetectionResult]:
     """Detect the best-animal box in an image, or return None if none is found."""
     validate_label_map()
@@ -231,8 +195,8 @@ def detect_animal(image_path: str, device: str = DEFAULT_DEVICE) -> Optional[Det
     if image is None:
         return None
 
-    model = load_rt_detr(device)
-    detections = _run_detector(image, model)
+    model_and_processor = load_rt_detr(device)
+    detections = _run_detector(image, model_and_processor)
     candidates = [
         d for d in detections
         if map_class_name(d["label"]) == "animal" and d["score"] >= RTDETR_CONFIDENCE_THRESHOLD
@@ -265,8 +229,8 @@ def detect_ear_tag(
         return None
     crop = image[y1:y2, x1:x2]
 
-    model = load_rt_detr(device)
-    detections = _parse_predictions(_predict_crop(model, crop))
+    model_and_processor = load_rt_detr(device)
+    detections = _run_detector(crop, model_and_processor)
     candidates = [
         d for d in detections
         if map_class_name(d["label"]) == "ear_tag" and d["score"] >= RTDETR_CONFIDENCE_THRESHOLD
@@ -282,18 +246,8 @@ def detect_ear_tag(
     )
 
 
-def _predict_crop(model: Any, crop: np.ndarray) -> Any:
-    """Run the detector over a cropped region, normalizing the call surface."""
-    try:
-        if hasattr(model, "predict"):
-            return model.predict(crop, verbose=False)
-        return model(crop)
-    except Exception as exc:
-        raise DetectionBackendError(f"RT-DETR cropped inference failed: {exc}") from exc
-
-
 # ---------------------------------------------------------------------------
-# SAM2 segmentation
+# SAM2 segmentation (unchanged from original - not part of B4)
 # ---------------------------------------------------------------------------
 def load_sam2(device: str = DEFAULT_DEVICE) -> Any:
     """Lazily load and cache the SAM2 image predictor, raising if unavailable."""

@@ -1,10 +1,10 @@
-"""Measurement engine: computes trait measurements from keypoints using pure geometry."""
+﻿"""Measurement engine: computes trait measurements from keypoints using pure geometry."""
 
 import math
 from typing import Dict, List, Optional, Tuple
 
-from common.schemas import MeasurementResult
-from config.traits import get_trait, TRAIT_REGISTRY
+from ml.common.schemas import MeasurementResult
+from ml.config.traits import get_trait, TRAIT_REGISTRY
 
 KEYPOINT_CONFIDENCE_THRESHOLD = 0.3
 

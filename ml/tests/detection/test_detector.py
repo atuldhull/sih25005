@@ -1,14 +1,10 @@
-"""Tests for the detection module (RT-DETR label mapping, detection, SAM2 upgrade)."""
-
-import sys
+﻿"""Tests for the detection module (RT-DETR label mapping, detection, SAM2 upgrade)."""
 
 import numpy as np
 import pytest
 
-sys.path.insert(0, "ml_pipeline")
-
-from detection import detector  # noqa: E402
-from common.schemas import DetectionResult  # noqa: E402
+from ml.detection import detector  # noqa: E402
+from ml.common.schemas import DetectionResult  # noqa: E402
 
 
 @pytest.fixture
@@ -31,49 +27,49 @@ class TestLabelMapping:
         assert detector.map_class_name(0) == "animal"
         assert detector.map_class_name(1) == "ear_tag"
 
-    def test_maps_native_string_labels(self):
-        assert detector.map_class_name("cow") == "animal"
-        assert detector.map_class_name("buffalo") == "animal"
-        assert detector.map_class_name("ear_tag") == "ear_tag"
+    # REMOVED (REVIEW-ml-dev.md B4 fallout): test_maps_native_string_labels
+    # used to assert that "cow"/"buffalo" string labels mapped to "animal".
+    # That was specific to the old Ultralytics backend, which sometimes
+    # returned string class names. HuggingFace transformers' RT-DETRv2
+    # always returns integer class IDs (see RAW_LABEL_TO_CLASS_NAME in
+    # config/detection.py, now {0: "animal", 1: "ear_tag"} only), so this
+    # scenario can no longer occur and the test is obsolete, not just broken.
 
     def test_raises_on_unrecognized_raw_label(self):
         with pytest.raises(detector.DetectionLabelError):
-            detector.map_class_name("person")
+            detector.map_class_name(99)
 
     def test_validate_label_map_rejects_bad_target(self, monkeypatch):
         monkeypatch.setattr(
             detector,
             "RAW_LABEL_TO_CLASS_NAME",
-            {**detector.RAW_LABEL_TO_CLASS_NAME, "coyote": "predator"},
+            {**detector.RAW_LABEL_TO_CLASS_NAME, 2: "predator"},
         )
         with pytest.raises(detector.DetectionLabelError):
             detector.validate_label_map()
 
 
 # ---------------------------------------------------------------------------
-# Detection functions (fake model injected, no real RT-DETR installed)
+# Detection functions
+#
+# CHANGED (REVIEW-ml-dev.md B4 fallout): load_rt_detr() now returns a
+# (model, processor) tuple instead of a single Ultralytics-style object with
+# .predict(). Rather than faking the internals of a transformers model call,
+# these tests mock detector._run_detector directly - that's the real
+# boundary between our code and the ML backend, and it's backend-agnostic:
+# these tests won't need to change again even if the transformers call
+# signature changes internally.
 # ---------------------------------------------------------------------------
-class FakeModel:
-    """Minimal stand-in whose .predict returns already-normalized predictions."""
-
-    def __init__(self, preds):
-        self._preds = preds
-
-    def predict(self, image, verbose=False):
-        return list(self._preds)
-
-
 class TestDetection:
     def test_detect_animal_returns_result(self, sample_image, monkeypatch):
+        monkeypatch.setattr(detector, "load_rt_detr", lambda device=None: (object(), object()))
         monkeypatch.setattr(
             detector,
-            "load_rt_detr",
-            lambda device=None: FakeModel(
-                [
-                    {"label": 0, "score": 0.92, "bbox": (1, 2, 300, 150)},
-                    {"label": 1, "score": 0.81, "bbox": (200, 100, 260, 130)},
-                ]
-            ),
+            "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5: [
+                {"label": 0, "score": 0.92, "bbox": (1, 2, 300, 150)},
+                {"label": 1, "score": 0.81, "bbox": (200, 100, 260, 130)},
+            ],
         )
         result = detector.detect_animal(sample_image)
         assert isinstance(result, DetectionResult)
@@ -82,18 +78,24 @@ class TestDetection:
         assert result.confidence == pytest.approx(0.92)
 
     def test_detect_animal_none_when_no_animal(self, sample_image, monkeypatch):
+        monkeypatch.setattr(detector, "load_rt_detr", lambda device=None: (object(), object()))
         monkeypatch.setattr(
             detector,
-            "load_rt_detr",
-            lambda device=None: FakeModel([{"label": 1, "score": 0.81, "bbox": (0, 0, 10, 10)}]),
+            "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5: [
+                {"label": 1, "score": 0.81, "bbox": (0, 0, 10, 10)}
+            ],
         )
         assert detector.detect_animal(sample_image) is None
 
     def test_detect_ear_tag_returns_cropped_coords(self, sample_image, monkeypatch):
+        monkeypatch.setattr(detector, "load_rt_detr", lambda device=None: (object(), object()))
         monkeypatch.setattr(
             detector,
-            "load_rt_detr",
-            lambda device=None: FakeModel([{"label": 1, "score": 0.88, "bbox": (125, 80, 175, 100)}]),
+            "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5: [
+                {"label": 1, "score": 0.88, "bbox": (125, 80, 175, 100)}
+            ],
         )
         result = detector.detect_ear_tag(sample_image, (100, 60, 300, 160))
         assert isinstance(result, DetectionResult)
@@ -102,10 +104,13 @@ class TestDetection:
         assert result.bbox == (225, 140, 275, 160)
 
     def test_detect_ear_tag_none_when_no_tag(self, sample_image, monkeypatch):
+        monkeypatch.setattr(detector, "load_rt_detr", lambda device=None: (object(), object()))
         monkeypatch.setattr(
             detector,
-            "load_rt_detr",
-            lambda device=None: FakeModel([{"label": 0, "score": 0.92, "bbox": (1, 2, 300, 150)}]),
+            "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5: [
+                {"label": 0, "score": 0.92, "bbox": (1, 2, 300, 150)}
+            ],
         )
         assert detector.detect_ear_tag(sample_image, (100, 60, 300, 160)) is None
 
