@@ -4,3 +4,5 @@ pymongo
 python-multipart
 httpx
 pillow
+faster-whisper
+pyttsx3

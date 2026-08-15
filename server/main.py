@@ -6,13 +6,18 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
+
+import threading
+import uuid
 
 import chat
 import reports
 import vkg
+import voice
 from overlays import render_overlay
 from rules import check_eligibility
-from scoring import score_animal
+from scoring_loader import engine_status, score_animal
 
 app = FastAPI(title="SIH25005 Backend")
 
@@ -21,6 +26,61 @@ db = client["sih25005"]
 
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 OVERLAY_DIR = Path(__file__).parent / "overlays_cache"
+VOICE_DIR = Path(__file__).parent / "voice_cache"
+
+
+@app.on_event("startup")
+def _startup():
+    # sort indexes (sessions are day-granular, _id breaks same-day ties);
+    # session_id is UNIQUE so concurrent phone retries cannot double-insert
+    try:
+        db.sessions.create_index([("date", -1), ("_id", -1)])
+        db.animals.create_index("village")
+    except Exception:
+        pass  # Mongo down: endpoints will surface it per-request
+    try:
+        db.sessions.drop_index("session_id_1")  # replace old non-unique index
+    except Exception:
+        pass
+    try:
+        db.sessions.create_index("session_id", unique=True)
+    except Exception as e:
+        print(f"[warm] WARNING: unique session index failed: {e}")
+
+    # warm the slow pieces in the background and SAY what happened -
+    # a silent warm failure means every chat quietly falls to templates
+    def warm():
+        try:
+            import rag
+            stats = rag.ensure_index(db)
+            print(f"[warm] knowledge index: {stats}")
+        except Exception as e:
+            print(f"[warm] knowledge index failed: {e}")
+        try:
+            voice._get_whisper()
+            print("[warm] whisper STT model loaded")
+        except Exception as e:
+            print(f"[warm] whisper unavailable: {e}")
+        try:
+            import httpx
+            r = httpx.post(f"{chat.OLLAMA_URL}/api/chat", timeout=120.0, json={
+                "model": chat.CHAT_MODEL, "stream": False,
+                "messages": [{"role": "user", "content": "hi"}],
+                "options": {"num_predict": 1},
+            })
+            print(f"[warm] ollama {chat.CHAT_MODEL}: HTTP {r.status_code}")
+        except Exception as e:
+            print(f"[warm] ollama unavailable: {e}")
+        try:
+            # privacy sweep: farmer voice clips older than ~6 hours
+            import time
+            cutoff = time.time() - 6 * 3600
+            for f in VOICE_DIR.glob("*.wav"):
+                if f.stat().st_mtime < cutoff:
+                    f.unlink(missing_ok=True)
+        except Exception:
+            pass
+    threading.Thread(target=warm, daemon=True).start()
 
 
 def _slug(name: str) -> str:
@@ -29,7 +89,8 @@ def _slug(name: str) -> str:
 
 @app.get("/ping")
 def ping():
-    return {"status": "ok", "service": "sih25005-server"}
+    return {"status": "ok", "service": "sih25005-server",
+            "scoring_engine": engine_status()}
 
 
 @app.get("/animal/{animal_id}")
@@ -54,13 +115,16 @@ def get_animal(animal_id: str):
 
 
 @app.post("/session")
-async def create_session(
+def create_session(
     animal_id: str = Form(...),
     device_session_id: str = Form(...),
     side_photo: UploadFile = File(...),
     rear_photo: UploadFile = File(...),
     gait_video: UploadFile = File(None),
 ):
+    # sync on purpose: FastAPI runs sync handlers in a threadpool, so
+    # when the real ML pipeline (seconds of CPU) replaces the fake
+    # engine, /ping and /chat keep answering while a session scores
     animal = db.animals.find_one({"_id": animal_id})
     if animal is None:
         raise HTTPException(status_code=404, detail="animal not found in BPA records")
@@ -83,7 +147,7 @@ async def create_session(
     for filename, upload in [("side.jpg", side_photo), ("rear.jpg", rear_photo),
                              ("gait.mp4", gait_video)]:
         if upload is not None:
-            (session_dir / filename).write_bytes(await upload.read())
+            (session_dir / filename).write_bytes(upload.file.read())
             saved[filename] = str(session_dir / filename)
 
     result = score_animal(saved.get("side.jpg"), saved.get("rear.jpg"),
@@ -119,15 +183,22 @@ async def create_session(
         })
 
     weight = result["weight_kg"]
-    db.sessions.insert_one({
-        "session_id": device_session_id,
-        "animal_id": animal_id,
-        "date": date.today().isoformat(),
-        "weight_kg_mid": (weight["low"] + weight["high"]) // 2,
-        "health_flags": result["health_flags"],
-        "files": saved,
-        "result": dict(result),
-    })
+    try:
+        db.sessions.insert_one({
+            "session_id": device_session_id,
+            "animal_id": animal_id,
+            "date": date.today().isoformat(),
+            "weight_kg_mid": (weight["low"] + weight["high"]) // 2,
+            "health_flags": result["health_flags"],
+            "files": saved,
+            "result": dict(result),
+        })
+    except DuplicateKeyError:
+        # a concurrent retry won the race - return the winner's result
+        winner = db.sessions.find_one({"session_id": device_session_id})
+        response = dict(winner["result"])
+        response["duplicate"] = True
+        return response
     return result
 
 
@@ -190,6 +261,58 @@ def chat_with_record(body: ChatRequest):
     if animal is None:
         raise HTTPException(status_code=404, detail="animal not found in BPA records")
     return chat.answer(db, animal, body.message)
+
+
+@app.post("/chat/voice")
+def chat_with_voice(animal_id: str = Form(...),
+                    audio: UploadFile = File(...)):
+    """Spoken question in, grounded answer out - plus a spoken reply
+    WAV when a matching Windows voice exists. Same grounding rules as
+    /chat. Deliberately a sync endpoint: transcription + TTS take
+    seconds, and FastAPI runs sync handlers in a threadpool so other
+    requests keep flowing."""
+    animal = db.animals.find_one({"_id": animal_id})
+    if animal is None:
+        raise HTTPException(status_code=404, detail="animal not found in BPA records")
+
+    VOICE_DIR.mkdir(parents=True, exist_ok=True)
+    stem = uuid.uuid4().hex
+    in_path = VOICE_DIR / f"{stem}.in.wav"
+    in_path.write_bytes(audio.file.read())
+
+    try:
+        heard, _ = voice.transcribe(str(in_path))
+    except voice.EngineUnavailable as e:
+        raise HTTPException(status_code=503,
+                            detail=f"speech engine unavailable: {e}")
+    finally:
+        in_path.unlink(missing_ok=True)  # farmer's recording: don't keep it
+    if not heard:
+        raise HTTPException(status_code=422,
+                            detail="could not understand the audio - please "
+                                   "record again closer to the phone")
+    if len(heard) > 500:
+        heard = heard[:500]
+
+    response = chat.answer(db, animal, heard)
+    response["heard"] = heard
+
+    reply_path = VOICE_DIR / f"{stem}.reply.wav"
+    if voice.synthesize(response["answer"], response["language"], str(reply_path)):
+        response["audio_url"] = f"/voice-audio/{stem}.reply.wav"
+    else:
+        response["audio_url"] = None
+    return response
+
+
+@app.get("/voice-audio/{fname}")
+def get_voice_audio(fname: str):
+    if not re.fullmatch(r"[a-f0-9]+\.reply\.wav", fname):
+        raise HTTPException(status_code=404, detail="unknown audio")
+    path = VOICE_DIR / fname
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="unknown audio")
+    return FileResponse(path, media_type="audio/wav")
 
 
 @app.get("/alerts")
