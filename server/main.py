@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from pymongo import MongoClient
@@ -20,6 +21,11 @@ from rules import check_eligibility
 from scoring_loader import engine_status, score_animal
 
 app = FastAPI(title="SIH25005 Backend")
+
+# hackathon LAN: allow browser-based clients too (Flutter web builds,
+# quick HTML test pages) - native apps ignore CORS entirely
+app.add_middleware(CORSMiddleware, allow_origins=["*"],
+                   allow_methods=["*"], allow_headers=["*"])
 
 client = MongoClient("mongodb://127.0.0.1:27017", serverSelectionTimeoutMS=3000)
 db = client["sih25005"]
