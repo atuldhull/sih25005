@@ -104,8 +104,14 @@ def validate(result: dict, mode: str = "pipeline") -> list[str]:
                 p.append(f"weight_kg: '{k}' must be a number, "
                          f"got {type(w.get(k)).__name__}")
         if isinstance(w.get("low"), (int, float)) and \
-           isinstance(w.get("high"), (int, float)) and w["low"] > w["high"]:
-            p.append("weight_kg: low > high")
+           isinstance(w.get("high"), (int, float)):
+            if w["low"] > w["high"]:
+                p.append("weight_kg: low > high")
+            # shape-valid but physically absurd weights (unit/scale bugs)
+            # must not pass the gate - adult cattle/buffalo territory only
+            if not (30 <= w["low"] <= 1500 and 30 <= w["high"] <= 1500):
+                p.append(f"weight_kg: implausible range {w['low']}-{w['high']} kg "
+                         "- check units/scale calibration")
 
     cap = result.get("captured")
     if not isinstance(cap, dict) or \
