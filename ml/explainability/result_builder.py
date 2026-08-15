@@ -85,6 +85,30 @@ def _to_jsonable(obj):
 
 
 
+"""
+ADD THIS to ml/explainability/result_builder.py (do not replace the whole file -
+keep build_scoring_result() and scoring_result_to_dict() exactly as they are;
+those still produce your internal shape and your 26 tests still exercise them).
+
+This adds ONE new function, to_contract_dict(), which is the adapter the review
+asked for: it takes your internal ScoringResult + the explainer's per-trait
+data + the raw measurements, and emits the exact contract/scoring_result.json
+shape. Internal shape never leaks past this function.
+
+Per REVIEW-ml-dev.md "Division of labor": animal_id, species, breed_*, captured,
+traits[20], weight_kg, symptom_vector, health_flags are YOURS to emit.
+session_id, eligible/eligible_reason, risk_report, herd_alerts, reports,
+escalated, captured_at, synced are SERVER-injected - this function intentionally
+does NOT set them (or sets safe empty/None placeholders the server overwrites).
+"""
+
+from typing import Dict, List, Optional
+
+from ml.common.schemas import MeasurementResult, ScoreResult, ScoringResult, WeightResult
+from ml.config.traits import get_contract_traits
+from ml.explainability.explainer import generate_trait_explanation, generate_overlay_data
+
+
 def to_contract_dict(
     result: ScoringResult,
     measurements: List[MeasurementResult],
@@ -93,6 +117,7 @@ def to_contract_dict(
     breed_verified: Optional[bool] = None,
     breed_verify_confidence: Optional[float] = None,
     captured: Optional[Dict[str, bool]] = None,
+    global_not_scored_reason: Optional[str] = None,
 ) -> dict:
     """Map internal ScoringResult -> the frozen contract shape (contract/scoring_result.json).
 
@@ -110,6 +135,16 @@ def to_contract_dict(
         captured: dict like {"side_photo": True, "rear_photo": True,
             "gait_video": False}; pass explicitly from pipeline.py based on
             which inputs were actually provided/passed QC.
+        global_not_scored_reason: when the WHOLE pipeline failed early (no
+            animal detected, unrecognized detection label, quality gate
+            failed, pose estimation not yet implemented, etc.), pass the
+            real reason string here. The contract has no top-level
+            status/warnings field for pipeline mode - the only honest place
+            to surface "why nothing was scored" is inside every trait's
+            not_scored_reason, so this overrides the generic per-trait
+            message with the real, specific cause. Leave None for a normal
+            run where individual traits may still legitimately be
+            not-measurable for their own separate reasons.
 
     Returns:
         A JSON-serializable dict matching contract/scoring_result.json exactly
@@ -144,9 +179,13 @@ def to_contract_dict(
                     "overlay_points": [],
                     "explanation": None,
                     "not_scored_reason": (
-                        "; ".join(measurement.flags)
-                        if measurement and measurement.flags
-                        else "required keypoints not available"
+                        global_not_scored_reason
+                        if global_not_scored_reason
+                        else (
+                            "; ".join(measurement.flags)
+                            if measurement and measurement.flags
+                            else "required keypoints not available"
+                        )
                     ),
                 }
             )

@@ -9,7 +9,7 @@ from ml.detection.detector import (
     detect_ear_tag,
 )
 from ml.explainability.explainer import assemble_explainability
-from ml.explainability.result_builder import build_scoring_result, scoring_result_to_dict
+from ml.explainability.result_builder import build_scoring_result, to_contract_dict
 from ml.ingestion.quality_validation import validate_image, validate_video
 from ml.measurement.traits import measure_all_traits
 from ml.scoring.scorer import check_eligibility, determine_status, score_all_traits
@@ -28,10 +28,21 @@ def score_animal(
 
     animal_record must contain at least {"animal_id": str|None,
     "species": "cattle"|"buffalo"}. Returns a JSON-serializable dict matching
-    the ScoringResult contract.
+    the frozen contract/scoring_result.json shape (pipeline mode) via
+    to_contract_dict() - NOT the internal ScoringResult shape.
     """
     animal_id = animal_record.get("animal_id")
     species = animal_record.get("species", "cattle")
+
+    # `captured` reflects whether an input was PROVIDED to this call, not
+    # whether it passed quality checks - side_img/rear_img are required
+    # params so they're always "captured" in that sense; gait_video depends
+    # on whether a video_path was given at all.
+    captured = {
+        "side_photo": True,
+        "rear_photo": True,
+        "gait_video": video_path is not None,
+    }
 
     # ---- Stage 1: Ingestion / quality gate ---------------------------------
     side_q = validate_image(side_img, "side")
@@ -39,8 +50,8 @@ def score_animal(
     video_q = validate_video(video_path) if video_path else None
 
     if not side_q["passed"]:
-        warnings = ["side_image_quality_failed: " + ", ".join(side_q["reasons"])]
-        return _build_not_scored(animal_id, species, warnings, quality_passed=False)
+        reason = "side_image_quality_failed: " + ", ".join(side_q["reasons"])
+        return _build_not_scored(animal_id, species, reason, quality_passed=False, captured=captured)
 
     quality_passed = side_q["passed"] and rear_q["passed"] and (video_q is None or video_q["passed"])
 
@@ -53,12 +64,14 @@ def score_animal(
     try:
         animal_detection = detect_animal(side_img)
     except DetectionBackendError as exc:
-        return _build_not_scored(animal_id, species, [f"detection_backend_unavailable: {exc}"], quality_passed)
+        reason = f"detection_backend_unavailable: {exc}"
+        return _build_not_scored(animal_id, species, reason, quality_passed, captured)
     except DetectionLabelError as exc:
-        return _build_not_scored(animal_id, species, [f"detection_label_unrecognized: {exc}"], quality_passed)
+        reason = f"detection_label_unrecognized: {exc}"
+        return _build_not_scored(animal_id, species, reason, quality_passed, captured)
 
     if animal_detection is None:
-        return _build_not_scored(animal_id, species, ["no_animal_detected"], quality_passed)
+        return _build_not_scored(animal_id, species, "no_animal_detected", quality_passed, captured)
 
     animal_bbox = animal_detection.bbox
     try:
@@ -83,13 +96,13 @@ def score_animal(
     symptom_vectors = None
 
     if keypoints is None:
-        warnings = []
+        reasons = []
         if not quality_passed:
             for label, q in (("rear", rear_q), ("video", video_q)):
                 if q is not None and not q["passed"]:
-                    warnings.append(f"{label}_quality_failed: " + ", ".join(q["reasons"]))
-        warnings.append("pose_estimation_not_implemented")
-        return _build_not_scored(animal_id, species, warnings, quality_passed)
+                    reasons.append(f"{label}_quality_failed: " + ", ".join(q["reasons"]))
+        reasons.append("pose_estimation_not_implemented")
+        return _build_not_scored(animal_id, species, "; ".join(reasons), quality_passed, captured)
 
     # ---- Stages 5-6: Measurement -> Scoring -> Status -----------------------
     measurements: List[MeasurementResult] = measure_all_traits(
@@ -117,19 +130,33 @@ def score_animal(
         model_versions={},  # TODO: populate from each model when implemented
         extra_warnings=explainability.get("text_summary", []),
     )
-    return scoring_result_to_dict(result)
+    # THE ACTUAL FIX: return the contract-shaped dict, not the internal shape.
+    # Breed fields stay None until Tag Intelligence (Stage 3) is implemented -
+    # that's honest, not a bug: we haven't verified breed, so we don't claim to.
+    return to_contract_dict(
+        result,
+        measurements,
+        keypoints,
+        breed_registered=None,
+        breed_verified=None,
+        breed_verify_confidence=None,
+        captured=captured,
+    )
 
 
 def _build_not_scored(
     animal_id: Optional[str],
     species: str,
-    warnings: List[str],
+    reason: str,
     quality_passed: bool,
+    captured: Dict[str, bool],
 ) -> dict:
-    """Build a NOT_SCORED result dict for degraded/unimplemented runs.
+    """Build a contract-shaped NOT_SCORED result for degraded/unimplemented runs.
 
-    Eligibility reasons are populated truthfully via check_eligibility() against
-    the empty measurements list, so the gate always explains why scoring failed.
+    `reason` is threaded into every trait's not_scored_reason via
+    to_contract_dict()'s global_not_scored_reason - the contract has no
+    top-level status/warnings field for pipeline mode, so this is the only
+    honest place to surface why nothing could be measured.
     """
     eligibility = check_eligibility(
         measurements=[],
@@ -144,6 +171,12 @@ def _build_not_scored(
         eligibility=eligibility,
         status="NOT_SCORED",
         tag_result=None,
-        extra_warnings=warnings,
+        extra_warnings=[reason],
     )
-    return scoring_result_to_dict(result)
+    return to_contract_dict(
+        result,
+        measurements=[],
+        keypoints={},
+        captured=captured,
+        global_not_scored_reason=reason,
+    )
