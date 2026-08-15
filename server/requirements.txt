@@ -6,3 +6,4 @@ httpx
 pillow
 faster-whisper
 pyttsx3
+edge-tts
