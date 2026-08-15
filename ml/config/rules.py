@@ -24,57 +24,71 @@ def _bins(min_v: float, max_v: float, reverse: bool = False) -> List[Tuple[float
 SPECIES_RULES = {
     "cattle": {
         # ---------------- Class A: angles (degrees) ----------------
-        # Very sloped = 1, very flat = 9; breed-typical near 4-6.
+        # NOTE (REVIEW-ml-dev.md, minor fix): reverse=True here may invert the
+        # correct ICAR direction convention. Flagged, not changed in this pass -
+        # confirm against ICAR reference before removing reverse=True.
         "rump_angle": {"min": 0.0, "max": 15.0, "bins": _bins(0.0, 15.0, reverse=True)},
-        # Very sickle = 1, very straight = 9; typical ~144-151.
         "hock_angle": {"min": 130.0, "max": 160.0, "bins": _bins(130.0, 160.0)},
-        # Weak/curved pastern = 1, steep = 9; typical ~45-55.
-        "pastern_angle": {"min": 40.0, "max": 65.0, "bins": _bins(40.0, 65.0)},
-        # Cow-hocked (inward) = 1, bandy (outward) = 9; straight (0) = 5.
-        "rear_leg_set": {"min": -10.0, "max": 10.0, "bins": _bins(-10.0, 10.0)},
-        # Knock-kneed = 1, bow-legged = 9; straight (0) = 5.
+        # RENAMED from pastern_angle -> foot_angle to match contract trait name.
+        "foot_angle": {"min": 40.0, "max": 65.0, "bins": _bins(40.0, 65.0)},
+        # RENAMED from rear_leg_set -> rear_legs_set to match contract trait name.
+        # NOTE (REVIEW-ml-dev.md, Fix #2): the underlying geometry for this trait
+        # is degenerate (wrong joint pairing) - fine to keep this rule table as-is,
+        # the bug is in measurement/traits.py, not here.
+        "rear_legs_set": {"min": -10.0, "max": 10.0, "bins": _bins(-10.0, 10.0)},
         "fore_leg_set": {"min": -8.0, "max": 8.0, "bins": _bins(-8.0, 8.0)},
-        # Upright/sharp shoulder = 1, sloped = 9; typical ~50-58.
         "shoulder_angle": {"min": 45.0, "max": 65.0, "bins": _bins(45.0, 65.0)},
+        # NEW - no real reference range exists yet. Placeholder only; do not treat
+        # any score produced from this as trustworthy until expert-calibrated.
+        "angularity": {"min": 10.0, "max": 35.0, "bins": _bins(10.0, 35.0)},
         # ---------------- Class B: ratios (dimensionless) ----------------
-        # Very compact = 1, very long = 9; typical ~1.05-1.20.
         "body_length_to_height_ratio": {"min": 0.90, "max": 1.40, "bins": _bins(0.90, 1.40)},
-        # Very narrow chest = 1, very wide = 9; typical ~0.60-0.70.
         "chest_width_to_depth_ratio": {"min": 0.50, "max": 0.80, "bins": _bins(0.50, 0.80)},
-        # Very weak loin = 1, very roached = 9; level topline = 5.
         "topline_symmetry": {"min": 0.90, "max": 1.10, "bins": _bins(0.90, 1.10)},
-        # Very V-shaped rump = 1, very parallel = 9; typical ~0.55-0.65.
         "pin_width_to_hook_distance_ratio": {"min": 0.40, "max": 0.70, "bins": _bins(0.40, 0.70)},
-        # Very deep udder = 1, very shallow = 9; typical ~0.20-0.40.
         "udder_depth_ratio": {"min": 0.0, "max": 0.60, "bins": _bins(0.0, 0.60, reverse=True)},
-        # Very narrow frame = 1, very broad = 9; typical ~0.35-0.40.
         "body_width_to_length_ratio": {"min": 0.30, "max": 0.45, "bins": _bins(0.30, 0.45)},
+        # NEW placeholders - no real reference ranges yet (require udder/teat
+        # keypoints that don't exist in keypoint_schema.py yet).
+        "fore_udder_attachment": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        "central_ligament": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        "front_teat_placement": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        "rear_teat_placement": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        "rear_legs_rear_view": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
         # ---------------- Class C: measurements (cm) ----------------
-        # Very small = 1, very large = 9; typical ~160-190.
         "heart_girth": {"min": 130.0, "max": 220.0, "bins": _bins(130.0, 220.0)},
-        # Very short = 1, very long = 9; typical ~120-150.
         "body_length": {"min": 100.0, "max": 180.0, "bins": _bins(100.0, 180.0)},
-        # Very short = 1, very tall = 9; typical ~125-145.
-        "height_at_withers": {"min": 100.0, "max": 170.0, "bins": _bins(100.0, 170.0)},
-        # Very short rump = 1, very long = 9; typical ~45-55.
+        # RENAMED from height_at_withers -> stature to match contract trait name.
+        "stature": {"min": 100.0, "max": 170.0, "bins": _bins(100.0, 170.0)},
         "rump_length": {"min": 35.0, "max": 65.0, "bins": _bins(35.0, 65.0)},
-        # Very narrow = 1, very wide = 9; typical ~40-50.
         "chest_width": {"min": 30.0, "max": 60.0, "bins": _bins(30.0, 60.0)},
-        # Very shallow = 1, very deep = 9; typical ~70-85.
+        # chest_depth kept (internal-only trait, same keypoints as body_depth).
         "chest_depth": {"min": 55.0, "max": 95.0, "bins": _bins(55.0, 95.0)},
-        # Very narrow rump = 1, very wide = 9; typical ~45-55.
+        # NEW: body_depth is the contract-facing trait with the same underlying
+        # measurement as chest_depth above (same keypoints: withers, chest_bottom).
+        # NOTE (REVIEW-ml-dev.md, Fix #3): this 2D distance is NOT true heart girth
+        # circumference - do not feed body_depth's value into Schaeffer's formula
+        # directly for heart_girth. See weight/estimator.py.
+        "body_depth": {"min": 55.0, "max": 95.0, "bins": _bins(55.0, 95.0)},
         "rump_width": {"min": 35.0, "max": 65.0, "bins": _bins(35.0, 65.0)},
-        # Very deep udder = 1, very high/short = 9; typical ~-2 to +10 cm vs hock.
         "udder_depth": {"min": -10.0, "max": 25.0, "bins": _bins(-10.0, 25.0, reverse=True)},
+        # NEW placeholders - no real reference ranges yet.
+        "rear_udder_height": {"min": 10.0, "max": 35.0, "bins": _bins(10.0, 35.0)},
+        "teat_length": {"min": 3.0, "max": 9.0, "bins": _bins(3.0, 9.0)},
+        "rear_udder_width": {"min": 8.0, "max": 22.0, "bins": _bins(8.0, 22.0)},
+        "teat_thickness": {"min": 1.5, "max": 4.5, "bins": _bins(1.5, 4.5)},
+        # measure_class SMAL in the contract - placeholder range on a 1-9-like scale.
+        "body_condition_score": {"min": 1.0, "max": 9.0, "bins": _bins(1.0, 9.0)},
     },
     "buffalo": {
         # ---------------- Class A: angles (degrees) ----------------
         "rump_angle": {"min": 0.0, "max": 16.0, "bins": _bins(0.0, 16.0, reverse=True)},
         "hock_angle": {"min": 132.0, "max": 162.0, "bins": _bins(132.0, 162.0)},
-        "pastern_angle": {"min": 42.0, "max": 67.0, "bins": _bins(42.0, 67.0)},
-        "rear_leg_set": {"min": -10.0, "max": 10.0, "bins": _bins(-10.0, 10.0)},
+        "foot_angle": {"min": 42.0, "max": 67.0, "bins": _bins(42.0, 67.0)},
+        "rear_legs_set": {"min": -10.0, "max": 10.0, "bins": _bins(-10.0, 10.0)},
         "fore_leg_set": {"min": -8.0, "max": 8.0, "bins": _bins(-8.0, 8.0)},
         "shoulder_angle": {"min": 45.0, "max": 65.0, "bins": _bins(45.0, 65.0)},
+        "angularity": {"min": 10.0, "max": 35.0, "bins": _bins(10.0, 35.0)},
         # ---------------- Class B: ratios (dimensionless) ----------------
         "body_length_to_height_ratio": {"min": 0.90, "max": 1.40, "bins": _bins(0.90, 1.40)},
         "chest_width_to_depth_ratio": {"min": 0.52, "max": 0.82, "bins": _bins(0.52, 0.82)},
@@ -82,15 +96,29 @@ SPECIES_RULES = {
         "pin_width_to_hook_distance_ratio": {"min": 0.40, "max": 0.70, "bins": _bins(0.40, 0.70)},
         "udder_depth_ratio": {"min": 0.0, "max": 0.60, "bins": _bins(0.0, 0.60, reverse=True)},
         "body_width_to_length_ratio": {"min": 0.30, "max": 0.45, "bins": _bins(0.30, 0.45)},
+        "fore_udder_attachment": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        "central_ligament": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        # NOTE: buffalo teat traits are measured on the left REAR teat, not front
+        # (REVIEW-ml-dev.md B3). This rule table entry does not encode which
+        # physical teat is used - that resolution happens in measurement/traits.py.
+        "front_teat_placement": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        "rear_teat_placement": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        "rear_legs_rear_view": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
         # ---------------- Class C: measurements (cm; buffalo larger) ----------------
         "heart_girth": {"min": 150.0, "max": 240.0, "bins": _bins(150.0, 240.0)},
         "body_length": {"min": 115.0, "max": 195.0, "bins": _bins(115.0, 195.0)},
-        "height_at_withers": {"min": 110.0, "max": 180.0, "bins": _bins(110.0, 180.0)},
+        "stature": {"min": 110.0, "max": 180.0, "bins": _bins(110.0, 180.0)},
         "rump_length": {"min": 40.0, "max": 70.0, "bins": _bins(40.0, 70.0)},
         "chest_width": {"min": 32.0, "max": 64.0, "bins": _bins(32.0, 64.0)},
         "chest_depth": {"min": 60.0, "max": 105.0, "bins": _bins(60.0, 105.0)},
+        "body_depth": {"min": 60.0, "max": 105.0, "bins": _bins(60.0, 105.0)},
         "rump_width": {"min": 40.0, "max": 70.0, "bins": _bins(40.0, 70.0)},
         "udder_depth": {"min": -10.0, "max": 25.0, "bins": _bins(-10.0, 25.0, reverse=True)},
+        "rear_udder_height": {"min": 12.0, "max": 38.0, "bins": _bins(12.0, 38.0)},
+        "teat_length": {"min": 3.5, "max": 10.0, "bins": _bins(3.5, 10.0)},
+        "rear_udder_width": {"min": 9.0, "max": 24.0, "bins": _bins(9.0, 24.0)},
+        "teat_thickness": {"min": 1.8, "max": 5.0, "bins": _bins(1.8, 5.0)},
+        "body_condition_score": {"min": 1.0, "max": 9.0, "bins": _bins(1.0, 9.0)},
     },
 }
 
@@ -101,6 +129,15 @@ def score_from_value(trait_id: str, species: str, value: float) -> Tuple[int, fl
     Confidence is highest (~0.95) when the value sits in the middle of a bin and
     lowest (~0.45) at bin boundaries, dropping to 0.3 when the value falls
     entirely outside the calibrated range.
+
+    NOTE (REVIEW-ml-dev.md, Important Fix #4): out-of-range values below currently
+    CLAMP to the nearest extreme score (1 or 9) at confidence 0.3, rather than
+    refusing to score. The review flags this as a problem: a garbage measurement
+    should produce not_scored_reason, not a confident-looking extreme score,
+    since "refusing to score" is a pitch differentiator for this project. This
+    function is left unchanged in this pass (it's part of the trait-rename fix,
+    not the clamping fix) - fixing the clamp-vs-refuse behavior is a separate,
+    still-open task.
     """
     if species not in SPECIES_RULES:
         raise KeyError(f"Unknown species: {species!r}")

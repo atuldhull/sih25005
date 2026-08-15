@@ -48,7 +48,7 @@ class MeasurementResult:
     """Physical measurement of a single trait, with quality flags."""
 
     trait_id: str
-    trait_class: Literal["A", "B", "C"]
+    trait_class: Literal["A", "B", "C", "SMAL"]
     value: Optional[float]
     unit: str
     confidence: float

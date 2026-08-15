@@ -12,6 +12,8 @@ from common.schemas import (
     TagResult,
     WeightResult,
 )
+from config.traits import get_contract_traits
+from explainability.explainer import generate_trait_explanation, generate_overlay_data
 
 
 def build_scoring_result(
@@ -74,3 +76,191 @@ def _to_jsonable(obj):
     if isinstance(obj, dict):
         return {key: _to_jsonable(value) for key, value in obj.items()}
     return obj
+
+
+
+
+
+
+
+from config.traits import get_contract_traits
+from explainability.explainer import generate_trait_explanation, generate_overlay_data
+
+
+def to_contract_dict(
+    result: ScoringResult,
+    measurements: List[MeasurementResult],
+    keypoints: dict,
+    breed_registered: Optional[str] = None,
+    breed_verified: Optional[bool] = None,
+    breed_verify_confidence: Optional[float] = None,
+    captured: Optional[Dict[str, bool]] = None,
+) -> dict:
+    """Map internal ScoringResult -> the frozen contract shape (contract/scoring_result.json).
+
+    Args:
+        result: your existing internal ScoringResult (unchanged).
+        measurements: the same MeasurementResult list used to build `result`,
+            needed here because measured_value/unit/trait_class live there,
+            not on ScoreResult.
+        keypoints: raw keypoints dict, needed to (re)compute overlay points
+            per trait via the explainer.
+        breed_registered/breed_verified/breed_verify_confidence: from your
+            Tag Intelligence layer once implemented; pass None until then -
+            the contract fields will be null, which is honest and correct
+            for the current NOT_SCORED/PARTIAL states.
+        captured: dict like {"side_photo": True, "rear_photo": True,
+            "gait_video": False}; pass explicitly from pipeline.py based on
+            which inputs were actually provided/passed QC.
+
+    Returns:
+        A JSON-serializable dict matching contract/scoring_result.json exactly
+        for every field this module owns. Fields owned by the server
+        (session_id, eligible, eligible_reason, risk_report, herd_alerts,
+        reports, escalated, captured_at, synced) are intentionally omitted
+        or set to safe defaults - the server overwrites/injects them.
+    """
+    measurement_by_trait = {m.trait_id: m for m in measurements}
+    score_by_trait = {s.trait_id: s for s in result.traits}
+
+    traits_out = []
+    for trait_def in get_contract_traits():
+        trait_id = trait_def["trait_id"]
+        measurement = measurement_by_trait.get(trait_id)
+        score = score_by_trait.get(trait_id)
+
+        # Trait wasn't measured at all this run (e.g. upstream stage not implemented
+        # yet) - emit a fully honest not_scored entry rather than skipping it, since
+        # the contract expects all 20 trait names present every time.
+        if measurement is None or score is None or score.score_1_9 is None:
+            traits_out.append(
+                {
+                    "name": trait_def["name"],
+                    "category": trait_def["category"],
+                    "score": None,
+                    "confidence": measurement.confidence if measurement else 0.0,
+                    "measured_value": None,
+                    "ci": None,
+                    "measure_class": trait_def["trait_class"],
+                    "view": trait_def["view"],
+                    "overlay_points": [],
+                    "explanation": None,
+                    "not_scored_reason": (
+                        "; ".join(measurement.flags)
+                        if measurement and measurement.flags
+                        else "required keypoints not available"
+                    ),
+                }
+            )
+            continue
+
+        overlay = generate_overlay_data(trait_id, keypoints)
+        explanation = generate_trait_explanation(measurement, score)
+
+        measured_value_str = (
+            f"{measurement.value:.1f} {measurement.unit}"
+            if measurement.value is not None
+            else None
+        )
+
+        traits_out.append(
+            {
+                "name": trait_def["name"],
+                "category": trait_def["category"],
+                "score": score.score_1_9,
+                "confidence": round(score.confidence, 2),
+                "measured_value": measured_value_str,
+                # ci (confidence interval) is not currently computed anywhere in the
+                # pipeline - leave null until a real CI estimate exists. Do NOT
+                # fabricate a range; null is the honest value here.
+                "ci": None,
+                "measure_class": trait_def["trait_class"],
+                "view": trait_def["view"],
+                "overlay_points": [list(p) for p in overlay["points"]],
+                "explanation": explanation,
+            }
+        )
+
+    weight_out = _weight_to_contract(result.weight)
+    symptom_vector_out = _symptom_vector_to_contract(result.symptom_vector)
+
+    return {
+        # --- server-owned fields: safe placeholders, server overwrites these ---
+        "session_id": None,
+        "eligible": None,
+        "eligible_reason": None,
+        # --- fields this module owns ---
+        "animal_id": result.animal_id,
+        "species": result.species,
+        "breed_registered": breed_registered,
+        "breed_verified": breed_verified,
+        "breed_verify_confidence": breed_verify_confidence,
+        "captured": captured or {"side_photo": False, "rear_photo": False, "gait_video": False},
+        "traits": traits_out,
+        "weight_kg": weight_out,
+        "symptom_vector": symptom_vector_out,
+        # --- server-owned, safe placeholders ---
+        "risk_report": [],
+        "herd_alerts": [],
+        "reports": None,
+        "escalated": False,
+        "health_flags": _health_flags_from_symptoms(result.symptom_vector),
+        "captured_at": None,
+        "synced": False,
+    }
+
+
+def _weight_to_contract(weight: Optional[WeightResult]) -> dict:
+    """Map WeightResult{estimate_kg, range_kg, confidence} -> weight_kg{low, high, method, cross_check}."""
+    if weight is None or weight.estimate_kg is None:
+        return {"low": None, "high": None, "method": None, "cross_check": None}
+    low, high = weight.range_kg
+    return {
+        "low": round(low, 1) if low is not None else None,
+        "high": round(high, 1) if high is not None else None,
+        # NOTE: hardcoded until weight/estimator.py exposes which formula/method
+        # actually produced this estimate (girth-length-regression vs SMAL volume).
+        "method": "girth-length-regression",
+        "cross_check": None,
+    }
+
+
+def _symptom_vector_to_contract(symptom_vectors: list) -> List[dict]:
+    """Map internal SymptomVector{category, present, confidence} -> contract
+    {symptom, confidence, region, source}.
+
+    IMPORTANT: `symptom` values MUST come from the vocabulary defined in
+    server/vkg.json (per REVIEW-ml-dev.md B1). This function currently passes
+    `category` straight through as `symptom` and leaves `region`/`source` as
+    None placeholders - before this is production-correct, cross-check every
+    category name your vet_screening module produces against vkg.json's
+    allowed symptom vocabulary, and fill in region/source from whichever
+    module actually generated the signal (e.g. source="video" for gait
+    symptoms from the Gait Analyzer, source="image" for posture/BCS symptoms).
+    Only include symptoms that are actually present (present=True) - the
+    contract's symptom_vector is a list of detected signals, not every
+    possible category.
+    """
+    out = []
+    for sv in symptom_vectors:
+        if not sv.present:
+            continue
+        out.append(
+            {
+                "symptom": sv.category,  # TODO: validate against server/vkg.json vocabulary
+                "confidence": round(sv.confidence, 2),
+                "region": None,  # TODO: fill in per symptom once vet_screening supplies it
+                "source": None,  # TODO: "image" | "video" depending on originating module
+            }
+        )
+    return out
+
+
+def _health_flags_from_symptoms(symptom_vectors: list) -> List[str]:
+    """Derive the top-level health_flags[] list from present symptoms.
+
+    Placeholder pass-through of category names for now - once vet_screening
+    and the vkg.json vocabulary are finalized, this should map categories to
+    the specific flag strings the app expects (e.g. "locomotion_abnormal").
+    """
+    return [sv.category for sv in symptom_vectors if sv.present]
