@@ -1,89 +1,113 @@
 {
-  "_comment": "Veterinary Knowledge Graph v1. Conditions with weighted symptom associations, compiled from public veterinary references. The symptom names used here ARE the official vocabulary for Person 2's symptom detection heads - do not invent new names without updating this file. This layer is PRE-SCREENING support, never a diagnosis.",
+  "_comment": "Veterinary Knowledge Graph v1. Conditions with weighted symptom associations, compiled from public veterinary references. The symptom names used here ARE the official vocabulary for Person 2's symptom detection heads - do not invent new names without updating this file. label_hi/advice_farmer_hi are used by the chatbot for Hindi answers. This layer is PRE-SCREENING support, never a diagnosis.",
 
   "conditions": {
     "lumpy_skin_disease": {
       "label": "Lumpy Skin Disease (LSD)",
+      "label_hi": "लम्पी स्किन रोग (एलएसडी)",
       "urgency": "high",
       "symptoms": { "skin_nodules": 0.9, "reduced_activity": 0.2, "poor_condition": 0.2 },
       "advice_farmer": "Firm lumps on the skin can spread to other animals. Keep this animal separate and do not share feed or water troughs.",
+      "advice_farmer_hi": "त्वचा पर सख्त गांठें दूसरे पशुओं में फैल सकती हैं। इस पशु को अलग रखें और चारा-पानी के बर्तन साझा न करें।",
       "advice_vet": "Nodular skin lesions consistent with capripox. Notifiable - isolate, confirm clinically, initiate ring vaccination protocol per state guidelines."
     },
     "foot_and_mouth_disease": {
       "label": "Foot and Mouth Disease (FMD)",
+      "label_hi": "खुरपका-मुंहपका रोग (एफएमडी)",
       "urgency": "high",
       "symptoms": { "mouth_lesions": 0.8, "drooling": 0.7, "gait_asymmetry": 0.4, "reduced_activity": 0.3 },
       "advice_farmer": "Sores in the mouth with heavy drooling spread very fast. Keep the animal away from the herd and inform your veterinary officer today.",
+      "advice_farmer_hi": "मुंह में छाले और अधिक लार बहना तेज़ी से फैलता है। पशु को झुंड से अलग रखें और आज ही पशु चिकित्सा अधिकारी को बताएं।",
       "advice_vet": "Vesicular oral lesions + ptyalism + lameness pattern. Notifiable - restrict movement, report to block veterinary officer, sample per FMD protocol."
     },
     "mastitis": {
       "label": "Mastitis",
+      "label_hi": "थनैला (मस्टाइटिस)",
       "urgency": "medium",
       "symptoms": { "udder_swelling": 0.8, "udder_asymmetry": 0.6, "udder_redness": 0.7 },
       "advice_farmer": "The udder looks swollen or uneven. Milk this animal last, keep the udder clean, and have the milk checked.",
+      "advice_farmer_hi": "थन सूजा या असमान दिखता है। इस पशु का दूध सबसे आखिर में निकालें, थन साफ रखें और दूध की जांच कराएं।",
       "advice_vet": "Visible udder inflammation/asymmetry. Recommend CMT on all quarters, milk culture if available, review milking hygiene."
     },
     "hoof_lameness": {
       "label": "Lameness (hoof origin)",
+      "label_hi": "लंगड़ापन (खुर की समस्या)",
       "urgency": "medium",
       "symptoms": { "gait_asymmetry": 0.8, "hoof_abnormality": 0.8, "arched_back": 0.3 },
       "advice_farmer": "The animal is not walking evenly. Check the hooves for stones, cracks or smell, and keep it on soft dry ground.",
+      "advice_farmer_hi": "पशु ठीक से नहीं चल रहा। खुर में पत्थर, दरार या बदबू देखें और उसे नरम सूखी जगह पर रखें।",
       "advice_vet": "Gait asymmetry with hoof abnormality. Recommend hoof examination and trimming; rule out foot rot / sole ulcer / white line disease."
     },
     "pinkeye": {
       "label": "Infectious keratoconjunctivitis (pinkeye)",
+      "label_hi": "आंख का संक्रमण (पिंक आई)",
       "urgency": "medium",
       "symptoms": { "eye_cloudiness": 0.8, "eye_discharge": 0.7 },
       "advice_farmer": "The eye looks cloudy or watery. Keep the animal in shade away from dust and flies, and show it to a vet.",
+      "advice_farmer_hi": "आंख धुंधली या पानी भरी लगती है। पशु को छाया में धूल और मक्खियों से दूर रखें और पशु चिकित्सक को दिखाएं।",
       "advice_vet": "Ocular opacity/epiphora pattern. Examine for corneal ulceration; fly control for the herd; early topical treatment prevents blindness."
     },
     "respiratory_infection": {
       "label": "Respiratory infection",
+      "label_hi": "सांस/छाती का संक्रमण",
       "urgency": "medium",
       "symptoms": { "nasal_discharge": 0.7, "reduced_activity": 0.4, "head_down_stance": 0.4 },
       "advice_farmer": "Runny nose with low energy can be a chest infection. Give clean water, shade and rest, and call the vet if it does not improve in a day.",
+      "advice_farmer_hi": "नाक बहना और सुस्ती छाती के संक्रमण का संकेत हो सकता है। साफ पानी, छाया और आराम दें; एक दिन में सुधार न हो तो पशु चिकित्सक को बुलाएं।",
       "advice_vet": "Nasal discharge with depression. Auscultate, check temperature; consider BRD complex, especially with recent transport/weather stress."
     },
     "ringworm": {
       "label": "Ringworm (fungal skin infection)",
+      "label_hi": "दाद (फफूंद संक्रमण)",
       "urgency": "low",
       "symptoms": { "circular_skin_patches": 0.9, "dull_coat": 0.3 },
       "advice_farmer": "Round grey patches on the skin usually heal but can spread to people and other animals. Avoid touching them with bare hands.",
+      "advice_farmer_hi": "त्वचा पर गोल भूरे चकत्ते फैल सकते हैं और इंसानों को भी लग सकते हैं। नंगे हाथ से न छुएं।",
       "advice_vet": "Circular alopecic crusted lesions consistent with dermatophytosis. Zoonotic - advise handling hygiene; topical antifungal if extensive."
     },
     "tick_infestation": {
       "label": "Tick infestation",
+      "label_hi": "किलनी (टिक) का प्रकोप",
       "urgency": "low",
       "symptoms": { "ticks_visible": 0.9, "dull_coat": 0.4, "poor_condition": 0.3 },
       "advice_farmer": "Ticks drink blood and weaken the animal. Remove visible ticks and ask the vet about spray or pour-on treatment.",
+      "advice_farmer_hi": "किलनी खून पीकर पशु को कमज़ोर करती हैं। दिखने वाली किलनियां हटाएं और स्प्रे/दवा के लिए पशु चिकित्सक से पूछें।",
       "advice_vet": "Visible ectoparasite load. Recommend acaricide program and pasture management; monitor for tick-borne disease signs (theileriosis, babesiosis)."
     },
     "bloat": {
       "label": "Bloat (ruminal tympany)",
+      "label_hi": "अफारा (पेट फूलना)",
       "urgency": "high",
       "symptoms": { "distended_abdomen": 0.9, "arched_back": 0.4, "reduced_activity": 0.4 },
       "advice_farmer": "A swollen left side after eating can be dangerous within hours. Walk the animal slowly and call the vet immediately.",
+      "advice_farmer_hi": "खाने के बाद बायीं ओर पेट फूलना कुछ घंटों में खतरनाक हो सकता है। पशु को धीरे-धीरे टहलाएं और तुरंत पशु चिकित्सक को बुलाएं।",
       "advice_vet": "Left flank distension pattern. Time-critical - assess for frothy vs free-gas bloat; stomach tube / trocar per severity."
     },
     "malnutrition": {
       "label": "Malnutrition / negative energy balance",
+      "label_hi": "कुपोषण / कमज़ोरी",
       "urgency": "medium",
       "symptoms": { "poor_condition": 0.8, "dull_coat": 0.5 },
       "advice_farmer": "The animal is thinner than it should be. Increase green fodder and ask about mineral mixture; also ask the vet to check for worms.",
+      "advice_farmer_hi": "पशु जितना होना चाहिए उससे दुबला है। हरा चारा बढ़ाएं, खनिज मिश्रण के बारे में पूछें और पेट के कीड़ों की जांच कराएं।",
       "advice_vet": "Low BCS with poor coat. Review ration energy/protein density; recommend fecal egg count and deworming per result."
     },
     "wound_abscess": {
       "label": "Wound / abscess",
+      "label_hi": "घाव / फोड़ा",
       "urgency": "medium",
       "symptoms": { "wounds": 0.9 },
       "advice_farmer": "There is a visible wound. Clean it with dilute antiseptic and keep flies away; see a vet if it is deep or swollen.",
+      "advice_farmer_hi": "दिखाई देने वाला घाव है। हल्के एंटीसेप्टिक से साफ करें, मक्खियों से बचाएं; गहरा या सूजा हो तो पशु चिकित्सक को दिखाएं।",
       "advice_vet": "Visible skin lesion/swelling. Assess depth and infection; debride/drain as indicated; tetanus risk if deep puncture."
     },
     "general_weakness": {
       "label": "General weakness / systemic illness",
+      "label_hi": "सामान्य कमज़ोरी / सुस्ती",
       "urgency": "medium",
       "symptoms": { "head_down_stance": 0.5, "reduced_activity": 0.6, "poor_condition": 0.5 },
       "advice_farmer": "The animal looks dull and low on energy. Give shade, water and easy feed, and have a vet examine it soon.",
+      "advice_farmer_hi": "पशु सुस्त और कम ऊर्जा वाला लगता है। छाया, पानी और हल्का चारा दें और जल्द पशु चिकित्सक से जांच कराएं।",
       "advice_vet": "Nonspecific depression posture. Broad differential - recommend full clinical exam including temperature, mucous membranes, rumen motility."
     }
   }

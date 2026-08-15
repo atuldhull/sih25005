@@ -1,15 +1,17 @@
 import re
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pymongo import MongoClient
 
+import chat
 import reports
 import vkg
 from overlays import render_overlay
+from rules import check_eligibility
 from scoring import score_animal
 
 app = FastAPI(title="SIH25005 Backend")
@@ -23,23 +25,6 @@ OVERLAY_DIR = Path(__file__).parent / "overlays_cache"
 
 def _slug(name: str) -> str:
     return "".join(c for c in name.lower() if c.isalnum())
-
-
-def check_eligibility(animal: dict) -> tuple[bool, str]:
-    """NDDB rule: type-classify only in FIRST lactation, day 30-90
-    after calving. Refusing to score outside this window is a
-    feature, not a limitation - the reason string is shown in-app."""
-    lact = animal["lactation_no"]
-    calving = datetime.strptime(animal["last_calving_date"], "%Y-%m-%d").date()
-    days = (date.today() - calving).days
-
-    if lact != 1:
-        return False, f"not in first lactation (currently lactation {lact})"
-    if days < 30:
-        return False, f"only {days} days since calving - scoring allowed from day 30"
-    if days > 90:
-        return False, f"{days} days since calving - past the day-90 window"
-    return True, f"first lactation, day {days} after calving"
 
 
 @app.get("/ping")
@@ -192,6 +177,21 @@ def get_overlay(session_id: str, trait_file: str):
     return FileResponse(cached, media_type="image/jpeg")
 
 
+class ChatRequest(BaseModel):
+    animal_id: str
+    message: str = Field(..., max_length=500)
+
+
+@app.post("/chat")
+def chat_with_record(body: ChatRequest):
+    """Feature (i): ask anything about ONE animal, answered only from
+    its record + care advice. Hindi in -> Hindi out."""
+    animal = db.animals.find_one({"_id": body.animal_id})
+    if animal is None:
+        raise HTTPException(status_code=404, detail="animal not found in BPA records")
+    return chat.answer(db, animal, body.message)
+
+
 @app.get("/alerts")
 def get_alerts():
     """The vet officer's mock notification feed: escalated screenings,
@@ -207,7 +207,7 @@ def get_history(animal_id: str):
         raise HTTPException(status_code=404, detail="animal not found in BPA records")
 
     sessions = []
-    for s in db.sessions.find({"animal_id": animal_id}).sort("date", -1):
+    for s in db.sessions.find({"animal_id": animal_id}).sort([("date", -1), ("_id", -1)]):
         sessions.append({
             "session_id": s["session_id"],
             "date": s["date"],

@@ -61,6 +61,22 @@
     "rule": "exists -> app marks it synced locally; missing -> app re-uploads it via POST /session (which is retry-safe and returns duplicate:true if it actually arrived)"
   },
 
+  "POST /chat": {
+    "purpose": "farmer chatbot: ask about ONE animal, answered ONLY from its record + care advice. Devanagari question -> Hindi answer, otherwise English",
+    "content_type": "application/json",
+    "request": { "animal_id": "356279812345", "message": "is her weight trend normal?" },
+    "response": {
+      "animal_id": "356279812345",
+      "answer": "Your Gir's weight is around 398 kg (from the 2026-08-12 session). The trend is upward.",
+      "language": "en",
+      "model": "ollama:qwen2.5:7b  (or 'template' when the local LLM is unavailable - same facts, canned phrasing)",
+      "escalate": false,
+      "disclaimer": "shown under every answer in the app"
+    },
+    "rule": "if escalate is true the app shows the urgent-vet banner prominently; emergency keywords in any supported language trigger it",
+    "error_404": { "detail": "animal not found in BPA records" }
+  },
+
   "GET /alerts": {
     "purpose": "vet officer's notification feed - escalated screenings (high risk or herd outbreak signal), newest first",
     "response": { "alerts": [
