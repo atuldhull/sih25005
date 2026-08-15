@@ -19,7 +19,9 @@ import re
 import threading
 from pathlib import Path
 
-STT_MODEL = os.environ.get("SIH_STT_MODEL", "base")
+# "small" is noticeably better than "base" at Hindi/Kannada and still
+# runs fine on CPU (~250 MB one-time download into the HF cache on D:)
+STT_MODEL = os.environ.get("SIH_STT_MODEL", "small")
 
 # tests flip these off for deterministic offline behavior
 USE_CLOUD_STT = True
@@ -83,17 +85,20 @@ def normalize_to_wav(src_path: str, dst_path: str) -> bool:
         return False
 
 
-def transcribe(audio_path: str) -> tuple[str, str]:
-    """Returns (text, detected_language: en/hi/kn). Empty text means
-    THIS clip was not understandable; a broken engine raises
+def transcribe(audio_path: str, lang_hint: str | None = None) -> tuple[str, str]:
+    """Returns (text, detected_language: en/hi/kn). lang_hint (from the
+    UI's language selector) steers both engines - it stops whisper from
+    mis-detecting Hindi as English and transliterating garbage. Empty
+    text means THIS clip was not understandable; a broken engine raises
     EngineUnavailable so the server can answer 503."""
+    hint = lang_hint if lang_hint in ("en", "hi", "kn") else None
     wav_path = audio_path + ".norm.wav"
     have_wav = normalize_to_wav(audio_path, wav_path)
     try:
         if USE_CLOUD_STT and have_wav:
             import llm_providers
             text = llm_providers.transcribe_cloud(
-                Path(wav_path).read_bytes(), mime="audio/wav")
+                Path(wav_path).read_bytes(), mime="audio/wav", lang_hint=hint)
             if text:
                 return text, _script_lang(text)
 
@@ -104,7 +109,8 @@ def transcribe(audio_path: str) -> tuple[str, str]:
         try:
             segments, info = model.transcribe(
                 wav_path if have_wav else audio_path,
-                beam_size=1, vad_filter=True)
+                beam_size=1, vad_filter=True,
+                language=hint, task="transcribe")
             text = " ".join(s.text.strip() for s in segments).strip()
             lang = _script_lang(text) if text else (info.language or "en")
             return text, lang

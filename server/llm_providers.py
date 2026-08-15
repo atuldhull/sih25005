@@ -235,8 +235,15 @@ _STT_PROMPT = (
     "text, nothing else. If the audio contains no clear speech, output "
     "exactly: [no speech]")
 
+_STT_HINT = {"hi": "The speaker is most likely speaking Hindi - transcribe "
+                   "in Devanagari script.",
+             "kn": "The speaker is most likely speaking Kannada - transcribe "
+                   "in Kannada script.",
+             "en": "The speaker is most likely speaking English."}
 
-def transcribe_cloud(audio_bytes: bytes, mime: str = "audio/wav") -> str | None:
+
+def transcribe_cloud(audio_bytes: bytes, mime: str = "audio/wav",
+                     lang_hint: str | None = None) -> str | None:
     """Speech-to-text via the same rotating Gemini keys - dramatically
     better Hindi/Kannada than the local whisper fallback. None when no
     keys, quota exhausted, or no speech."""
@@ -254,7 +261,8 @@ def transcribe_cloud(audio_bytes: bytes, mime: str = "audio/wav") -> str | None:
                     "contents": [{"role": "user", "parts": [
                         {"inlineData": {"mimeType": mime, "data":
                          base64.b64encode(audio_bytes).decode()}},
-                        {"text": _STT_PROMPT},
+                        {"text": _STT_PROMPT + " " +
+                         _STT_HINT.get(lang_hint or "", "")},
                     ]}],
                     "generationConfig": {"temperature": 0.0,
                                          "maxOutputTokens": 300,

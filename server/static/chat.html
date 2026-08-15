@@ -334,6 +334,33 @@
       const chunks = [];
       recorder = new MediaRecorder(stream);
       recorder.ondataavailable = e => chunks.push(e.data);
+
+      // hands-free stop: watch the mic level; once the farmer has
+      // spoken and then stays quiet ~1.8s (or 15s cap), stop by itself
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      const lvl = new Float32Array(analyser.fftSize);
+      let spoke = false, silentMs = 0, lastT = performance.now();
+      const startT = lastT, SILENCE_MS = 1800, MAX_MS = 15000;
+      (function watch() {
+        if (!recording) { audioCtx.close().catch(() => {}); return; }
+        analyser.getFloatTimeDomainData(lvl);
+        let sum = 0;
+        for (let i = 0; i < lvl.length; i++) sum += lvl[i] * lvl[i];
+        const rms = Math.sqrt(sum / lvl.length);
+        const now = performance.now();
+        if (rms > 0.015) { spoke = true; silentMs = 0; }
+        else silentMs += now - lastT;
+        lastT = now;
+        if ((spoke && silentMs > SILENCE_MS) || now - startT > MAX_MS) {
+          audioCtx.close().catch(() => {});
+          recorder.stop();
+          return;
+        }
+        requestAnimationFrame(watch);
+      })();
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         recording = false; $("mic").className = "btn";
@@ -343,6 +370,7 @@
         setBusy(true);
         const fd = new FormData();
         fd.append("audio", blob, "question.webm");
+        fd.append("language", $("lang").value);
         try {
           const r = await fetchWithTimeout("/transcribe", { method: "POST", body: fd }, 45000);
           if (!r.ok) {
@@ -362,7 +390,8 @@
       };
       recorder.start();
       recording = true; $("mic").className = "btn rec";
-      addSystem("Recording… tap the microphone again to finish.");
+      addSystem("Listening… speak now — it stops by itself when you pause "
+        + "(or tap the mic to stop).");
     } catch { addSystem("Microphone permission was denied."); }
   }
   $("mic").addEventListener("click", toggleMic);

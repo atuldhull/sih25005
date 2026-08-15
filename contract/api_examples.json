@@ -81,7 +81,7 @@
   "POST /transcribe": {
     "purpose": "speech-to-text ONLY - the app puts the text in the chat box for the farmer to review/correct before sending (preferred UX). STT chain: Gemini (rotating keys, strong Hindi/Kannada) -> local whisper",
     "content_type": "multipart/form-data",
-    "fields": { "audio": "(file - wav/webm/mp3 recording, max 2 MB)" },
+    "fields": { "audio": "(file - wav/webm/mp3 recording, max 2 MB)", "language": "optional hint en/hi/kn (from the app's language selector) - steers both STT engines, prevents Hindi being mis-heard as English" },
     "response": { "heard": "मेरी गाय का वज़न कितना है?", "language": "hi" },
     "error_422": { "detail": "could not hear any words - please record again closer to the phone" }
   },

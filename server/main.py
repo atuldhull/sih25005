@@ -350,7 +350,8 @@ def chat_with_record(body: ChatRequest):
 
 
 @app.post("/transcribe")
-def transcribe_only(audio: UploadFile = File(...)):
+def transcribe_only(audio: UploadFile = File(...),
+                    language: str = Form("auto")):
     """Speech-to-text WITHOUT answering: the UI puts the text in the
     chat box so the farmer can review/correct it before sending."""
     VOICE_DIR.mkdir(parents=True, exist_ok=True)
@@ -362,7 +363,7 @@ def transcribe_only(audio: UploadFile = File(...)):
                                    "under ~1 minute")
     in_path.write_bytes(data)
     try:
-        heard, lang = voice.transcribe(str(in_path))
+        heard, lang = voice.transcribe(str(in_path), lang_hint=language)
     except voice.EngineUnavailable as e:
         raise HTTPException(status_code=503,
                             detail=f"speech engine unavailable: {e}")
@@ -399,7 +400,7 @@ def chat_with_voice(animal_id: str = Form(...),
     in_path.write_bytes(data)
 
     try:
-        heard, _ = voice.transcribe(str(in_path))
+        heard, _ = voice.transcribe(str(in_path), lang_hint=language)
     except voice.EngineUnavailable as e:
         raise HTTPException(status_code=503,
                             detail=f"speech engine unavailable: {e}")
