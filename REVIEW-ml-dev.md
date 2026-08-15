@@ -136,3 +136,46 @@ straight in.
 Suggested order: B1+B2+B3 together (one evening of mapping work — the data
 mostly exists already), then B4 + fix 5 (unblocks integration), then the
 geometry fixes 1–4, then the rest.
+
+---
+
+# Verification round 1 — commits 68c986e, 0b6fb13, 9bc3cb6 (2026-08-19)
+
+Independently verified on a clean checkout. Excellent progress:
+
+**Confirmed fixed ✅**
+- B3 registry: 20 contract traits, categories, SMAL class — scratch test
+  emits all 20 and validates clean.
+- B4 licensing: zero ultralytics imports remain (only comments explaining
+  the removal); transformers RT-DETRv2 backend in place.
+- Fix 5: `from ml.pipeline import score_animal` imports cleanly; all 25
+  tests pass in a minimal venv.
+- Fix 6: requirements.txt is all real, installable packages.
+
+**One wiring gap left — the only thing between you and the merge 🔴**
+`score_animal()` still returns the OLD internal shape (29 contract
+violations at the entry point). Your `to_contract_dict()` works — but
+nothing calls it. Since it needs the internal intermediates
+(ScoringResult, measurements, keypoints), the call has to happen inside
+`score_animal()` where they're in scope:
+build result → `return to_contract_dict(result, measurements, keypoints,
+breed_registered=animal_record.get("breed"), captured={...from the three
+input args...})`. Roughly 10 lines. Re-run
+`py contract/validate_result.py`-style check on `score_animal()` output
+(not the adapter directly) and you're green.
+
+Also: promote `ml/test_contract_output.py` from scratch to a real test in
+`ml/tests/` asserting `validate(score_animal(...), mode="pipeline") == []`
+— that's the exact merge gate, in your suite.
+
+**Heads-up: the validator now checks plausibility too.** Your scratch run
+produced weight 0.41 kg — shape-valid, physically absurd (synthetic-unit
+artifact). `validate_result.py` now rejects weight outside 30–1500 kg, so
+make sure the degraded path returns weight honestly (contract allows
+scoring refusal; it doesn't allow a 0.4 kg cow).
+
+**Still open from the important list**: angle folding for facing-direction
+(imp. 1), clamp-vs-refuse on out-of-range values (imp. 4), and verify the
+leg-set deviation-from-vertical rewrite landed in code, not just comments
+(imp. 2). Heart girth to not_measurable-until-SMAL (imp. 3) looks
+addressed via the registry — nice.
