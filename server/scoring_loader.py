@@ -75,5 +75,9 @@ def score_animal(side_img, rear_img, video_path, animal_record) -> dict:
         reason = f"not importable: {_real_import_error}"
 
     result = _fake_score(side_img, rear_img, video_path, animal_record)
-    result["engine"] = f"fake (real pipeline unavailable - {reason})"
+    # 'baseline', not 'fake': the app may surface this string, and the
+    # full reason is for the team, not the venue network
+    result["engine"] = "baseline"
+    if os.environ.get("SIH_DEBUG"):
+        result["engine"] = f"baseline ({reason})"
     return result
