@@ -1,0 +1,21 @@
+{
+  "_readme": "Copy this file to keys.json (which is GITIGNORED - never commit real keys) and paste your free-tier keys. 2-3 Gemini keys recommended: when one hits its per-minute quota the next takes over automatically. Get keys at aistudio.google.com (Gemini) and console.groq.com (Groq). Leave any list empty to skip that provider - the bot then uses local Ollama, and failing that, deterministic template answers. keys.json is HOT-RELOADED: pasted keys take effect within seconds, no server restart needed. Watch the server window for [llm] lines - bad keys are reported there by their last 4 characters.",
+
+  "gemini": {
+    "model": "gemini-2.5-flash",
+    "keys": [
+      "PASTE_GEMINI_KEY_1",
+      "PASTE_GEMINI_KEY_2",
+      "PASTE_GEMINI_KEY_3"
+    ]
+  },
+
+  "openai_compatible": [
+    {
+      "name": "groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "model": "llama-3.3-70b-versatile",
+      "keys": []
+    }
+  ]
+}

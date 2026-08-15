@@ -65,9 +65,12 @@ def main():
     assert r.status_code == 422
     print("PASS  600-char message -> 422 (length cap)")
 
-    # force the template path for intent tests: dead Ollama port
+    # force the template path for intent tests: dead Ollama port AND a
+    # stubbed cloud chain (a teammate's machine may have real keys)
     real_url = chat.OLLAMA_URL
+    real_cloud = chat.llm_providers.try_cloud
     chat.OLLAMA_URL = "http://127.0.0.1:9"
+    chat.llm_providers.try_cloud = lambda s, u: (None, None)
     try:
         r = client.post("/chat", json={"animal_id": ELIGIBLE,
                                        "message": "what is her weight?"})
@@ -115,6 +118,7 @@ def main():
         print("PASS  unknown animal -> 404")
     finally:
         chat.OLLAMA_URL = real_url
+        chat.llm_providers.try_cloud = real_cloud
 
     # live path only when the daemon is up AND the model is pulled
     live = False
@@ -130,11 +134,12 @@ def main():
                                         "message": "is her weight trend normal?"})
         body = r7.json()
         assert r7.status_code == 200 and body["answer"].strip()
-        if body["model"].startswith("ollama:"):
-            print(f"PASS  live Ollama answer: {body['answer'][:80]}...")
+        if body["model"] != "template":
+            print(f"PASS  live LLM answer via {body['model']}: "
+                  f"{body['answer'][:70]}...")
         else:
-            print("WARN  Ollama live but slow/invalid reply - template fallback "
-                  "answered (by design)")
+            print("WARN  LLMs reachable but slow/invalid reply - template "
+                  "fallback answered (by design)")
     else:
         print(f"SKIP  Ollama daemon or model {chat.CHAT_MODEL} unavailable - "
               "live path not exercised")

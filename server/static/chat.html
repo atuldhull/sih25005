@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pashu Mitra · Livestock Care Assistant</title>
+<style>
+  :root {
+    --green-900: #14532d; --green-700: #15803d; --green-600: #16a34a;
+    --green-50: #f0fdf4; --ink: #0f172a; --muted: #64748b;
+    --line: #e2e8f0; --bg: #f6f8fa; --card: #ffffff;
+    --red-600: #dc2626; --red-50: #fef2f2; --amber-50: #fffbeb;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans",
+                 "Noto Sans Devanagari", sans-serif;
+    background: var(--bg); color: var(--ink); height: 100vh;
+    display: flex; flex-direction: column;
+  }
+
+  /* ---------- header ---------- */
+  header {
+    background: linear-gradient(135deg, var(--green-900), var(--green-700));
+    color: #fff; padding: 14px 22px; display: flex; align-items: center;
+    gap: 14px; box-shadow: 0 2px 10px rgba(15, 23, 42, .18);
+  }
+  .mark {
+    width: 40px; height: 40px; border-radius: 10px; background: #ffffff1c;
+    border: 1px solid #ffffff38; display: grid; place-items: center;
+    font-size: 20px; font-weight: 700;
+  }
+  .h-title { font-size: 17px; font-weight: 650; letter-spacing: .2px; }
+  .h-sub { font-size: 12px; opacity: .82; margin-top: 1px; }
+  .spacer { flex: 1; }
+  .status {
+    display: flex; align-items: center; gap: 7px; font-size: 12px;
+    background: #ffffff17; border: 1px solid #ffffff2e;
+    padding: 6px 12px; border-radius: 999px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }
+  .dot.ok { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+  .dot.err { background: #f87171; }
+
+  /* ---------- layout ---------- */
+  main {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    max-width: 860px; width: 100%; margin: 0 auto; padding: 16px 16px 0;
+  }
+
+  .animal-bar {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 14px; display: flex;
+    align-items: center; gap: 12px; margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
+  }
+  .animal-bar label { font-size: 12.5px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+  select {
+    flex: 1; border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 10px; font-size: 14px; font-family: inherit;
+    background: #fff; color: var(--ink); outline: none;
+  }
+  select:focus { border-color: var(--green-600); }
+  .badge {
+    font-size: 11.5px; font-weight: 650; padding: 4px 10px;
+    border-radius: 999px; white-space: nowrap;
+  }
+  .badge.ok { background: var(--green-50); color: var(--green-700);
+    border: 1px solid #bbf7d0; }
+  .badge.no { background: var(--amber-50); color: #b45309;
+    border: 1px solid #fde68a; }
+
+  /* ---------- messages ---------- */
+  #chat {
+    flex: 1; overflow-y: auto; padding: 6px 2px 14px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .msg { max-width: 78%; line-height: 1.55; font-size: 14.5px;
+    white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user {
+    align-self: flex-end; background: var(--green-700); color: #fff;
+    padding: 11px 15px; border-radius: 16px 16px 4px 16px;
+    box-shadow: 0 1px 3px rgba(20, 83, 45, .25);
+  }
+  .msg.bot {
+    align-self: flex-start; background: var(--card);
+    border: 1px solid var(--line); padding: 12px 15px;
+    border-radius: 16px 16px 16px 4px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
+  }
+  .msg.bot.urgent { border-left: 4px solid var(--red-600);
+    background: var(--red-50); }
+  .msg.system { align-self: center; background: transparent;
+    color: var(--muted); font-size: 12.5px; text-align: center; }
+  .meta { margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--line);
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip {
+    font-size: 10.5px; font-weight: 600; color: var(--green-900);
+    background: var(--green-50); border: 1px solid #bbf7d0;
+    padding: 2.5px 9px; border-radius: 999px;
+  }
+  .chip.gray { color: var(--muted); background: #f8fafc;
+    border-color: var(--line); font-weight: 500; }
+  .disc { font-size: 11px; color: var(--muted); margin-top: 7px;
+    font-style: italic; }
+  audio { margin-top: 8px; width: 100%; height: 34px; }
+
+  .typing { display: inline-flex; gap: 5px; padding: 6px 2px; }
+  .typing i { width: 7px; height: 7px; border-radius: 50%;
+    background: #94a3b8; animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 70%, 100% { opacity: .25; } 35% { opacity: 1; } }
+
+  /* ---------- composer ---------- */
+  .composer-wrap { padding: 12px 0 16px; }
+  .composer {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; display: flex; align-items: center; gap: 8px;
+    padding: 8px 8px 8px 16px; box-shadow: 0 2px 8px rgba(15, 23, 42, .06);
+  }
+  .composer:focus-within { border-color: var(--green-600); }
+  #box { flex: 1; border: none; outline: none; font-size: 14.5px;
+    font-family: inherit; background: transparent; color: var(--ink); }
+  .btn {
+    border: none; cursor: pointer; border-radius: 10px; width: 42px;
+    height: 42px; display: grid; place-items: center; font-size: 17px;
+    background: #f1f5f9; color: var(--ink); transition: all .15s;
+  }
+  .btn:hover { background: #e2e8f0; }
+  .btn.send { background: var(--green-700); color: #fff; }
+  .btn.send:hover { background: var(--green-900); }
+  .btn.rec { background: var(--red-600); color: #fff;
+    animation: pulse 1.1s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(220, 38, 38, .18); } }
+  .foot { text-align: center; font-size: 11px; color: var(--muted);
+    padding: 0 0 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="mark">पम</div>
+  <div>
+    <div class="h-title">Pashu Mitra — Livestock Care Assistant</div>
+    <div class="h-sub">Bharat Pashudhan · Animal Type Classification · SIH25005</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">Connecting…</span></div>
+</header>
+
+<main>
+  <div class="animal-bar">
+    <label>Animal</label>
+    <select id="animal"></select>
+    <span class="badge" id="eligBadge" hidden></span>
+  </div>
+
+  <div id="chat"></div>
+
+  <div class="composer-wrap">
+    <div class="composer">
+      <input id="box" type="text" maxlength="500" autocomplete="off"
+             placeholder="Ask about this animal — weight, scores, health… (हिंदी में भी पूछ सकते हैं)">
+      <button class="btn" id="mic" title="Ask by voice">🎙</button>
+      <button class="btn send" id="send" title="Send">➤</button>
+    </div>
+  </div>
+  <div class="foot">Screening support only — final decisions rest with the veterinary officer.</div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const chat = $("chat"), box = $("box"), sel = $("animal");
+  let recorder = null, recording = false, busy = false;
+
+  function setBusy(b) {
+    busy = b;
+    $("send").disabled = b; $("mic").disabled = b && !recording;
+    $("send").style.opacity = b ? ".5" : "1";
+  }
+
+  function fetchWithTimeout(url, opts, ms) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms || 65000);
+    return fetch(url, Object.assign({}, opts, { signal: ctrl.signal }))
+      .finally(() => clearTimeout(t));
+  }
+
+  /* ---------- helpers ---------- */
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function scroll() { chat.scrollTop = chat.scrollHeight; }
+
+  function addUser(text) { chat.appendChild(el("div", "msg user", text)); scroll(); }
+  function addSystem(text) { chat.appendChild(el("div", "msg system", text)); scroll(); }
+
+  function addBot(data) {
+    const m = el("div", "msg bot" + (data.escalate ? " urgent" : ""));
+    m.appendChild(document.createTextNode(data.answer));
+    const meta = el("div", "meta");
+    if (data.model) meta.appendChild(el("span", "chip gray", data.model === "template"
+      ? "instant record answer" : data.model));
+    (data.sources || []).forEach(s =>
+      meta.appendChild(el("span", "chip", "📄 " + s)));
+    if (meta.children.length) m.appendChild(meta);
+    if (data.audio_url) {
+      const a = document.createElement("audio");
+      a.controls = true; a.src = data.audio_url;
+      m.appendChild(a);
+    }
+    if (data.disclaimer) m.appendChild(el("div", "disc", data.disclaimer));
+    chat.appendChild(m); scroll();
+  }
+
+  function addTyping() {
+    const m = el("div", "msg bot");
+    const t = el("span", "typing");
+    for (let i = 0; i < 3; i++) t.appendChild(document.createElement("i"));
+    m.appendChild(t); chat.appendChild(m); scroll();
+    return m;
+  }
+
+  /* ---------- server status ---------- */
+  async function ping() {
+    try {
+      const r = await fetch("/ping"); await r.json();
+      $("dot").className = "dot ok"; $("statusText").textContent = "Server connected";
+    } catch {
+      $("dot").className = "dot err"; $("statusText").textContent = "Server unreachable";
+    }
+  }
+
+  /* ---------- animals ---------- */
+  async function loadAnimals() {
+    try {
+      const r = await fetch("/animals");
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        addSystem(d.detail || "Could not load the animal list.");
+        return;
+      }
+      const list = (await r.json()).animals;
+      sel.innerHTML = "";
+      list.forEach(a => {
+        const o = document.createElement("option");
+        o.value = a.animal_id;
+        o.textContent = `${a.breed} ${a.species === "buffalo" ? "🐃" : "🐄"} · ${a.animal_id.slice(-4)} · ${a.village}`;
+        o.dataset.eligible = a.eligible;
+        sel.appendChild(o);
+      });
+      updateBadge();
+    } catch { addSystem("Could not load animal list — is the server running?"); }
+  }
+  function updateBadge() {
+    const opt = sel.selectedOptions[0]; const b = $("eligBadge");
+    if (!opt) { b.hidden = true; return; }
+    const ok = opt.dataset.eligible === "true";
+    b.hidden = false;
+    b.className = "badge " + (ok ? "ok" : "no");
+    b.textContent = ok ? "Eligible for scoring" : "Not eligible now";
+  }
+  sel.addEventListener("change", () => {
+    updateBadge();
+    chat.innerHTML = "";
+    addSystem("Now discussing animal …" + sel.value.slice(-4) +
+              ". Ask about weight, scores, eligibility or health.");
+  });
+
+  /* ---------- text chat ---------- */
+  async function send() {
+    if (busy) return;
+    const text = box.value.trim();
+    if (!text) return;
+    if (!sel.value) { addSystem("Select an animal first."); return; }
+    box.value = ""; addUser(text);
+    const typing = addTyping(); setBusy(true);
+    try {
+      const r = await fetchWithTimeout("/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ animal_id: sel.value, message: text }),
+      });
+      typing.remove();
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        addSystem(d.detail || "The server could not answer that request.");
+        return;
+      }
+      addBot(await r.json());
+    } catch (e) {
+      typing.remove();
+      addSystem(e.name === "AbortError"
+        ? "This is taking unusually long — please try again."
+        : "Connection problem — please try again.");
+    } finally { setBusy(false); }
+  }
+  $("send").addEventListener("click", send);
+  box.addEventListener("keydown", e => {
+    // IME-safe: never send a half-composed Hindi word
+    if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) send();
+  });
+
+  /* ---------- voice chat ---------- */
+  async function toggleMic() {
+    if (recording) { recorder.stop(); return; }
+    if (busy) return;
+    if (!sel.value) { addSystem("Select an animal first."); return; }
+    if (!navigator.mediaDevices) {
+      addSystem("Voice needs a secure page: open http://localhost:8000/chat-ui "
+        + "on the laptop, or use HTTPS. Text chat works everywhere.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        recording = false; $("mic").className = "btn";
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        addUser("🎙 (voice question)");
+        const typing = addTyping(); setBusy(true);
+        const fd = new FormData();
+        fd.append("animal_id", sel.value);
+        fd.append("audio", blob, "question.webm");
+        try {
+          const r = await fetchWithTimeout("/chat/voice", { method: "POST", body: fd }, 90000);
+          typing.remove();
+          if (!r.ok) {
+            const d = await r.json().catch(() => ({}));
+            addSystem(d.detail || "Could not process the recording.");
+            return;
+          }
+          const data = await r.json();
+          const last = chat.querySelectorAll(".msg.user");
+          if (data.heard && last.length) last[last.length - 1].textContent = "🎙 " + data.heard;
+          addBot(data);
+        } catch (e) {
+          typing.remove();
+          addSystem(e.name === "AbortError"
+            ? "This is taking unusually long — please try again."
+            : "Connection problem — please try again.");
+        } finally { setBusy(false); }
+      };
+      recorder.start();
+      recording = true; $("mic").className = "btn rec";
+      addSystem("Recording… tap the microphone again to finish.");
+    } catch { addSystem("Microphone permission was denied."); }
+  }
+  $("mic").addEventListener("click", toggleMic);
+
+  /* ---------- boot ---------- */
+  if (!window.isSecureContext) {
+    $("mic").style.opacity = ".45";
+    $("mic").title = "Voice needs localhost or HTTPS — text works everywhere";
+  }
+  ping(); setInterval(() => {
+    ping();
+    if (!sel.options.length) loadAnimals();  // recover once Mongo is up
+  }, 15000);
+  loadAnimals().then(() => {
+    addSystem("Welcome. Select an animal above, then ask in English or हिंदी — by text or voice.");
+  });
+})();
+</script>
+</body>
+</html>

@@ -69,7 +69,7 @@
       "animal_id": "356279812345",
       "answer": "Your Gir's weight is around 398 kg (from the 2026-08-12 session). The trend is upward.",
       "language": "en",
-      "model": "ollama:qwen2.5:7b  (or 'template' when the local LLM is unavailable - same facts, canned phrasing)",
+      "model": "which brain answered: 'gemini:<model>' or 'groq:<model>' (cloud free-tier chain, rotating keys), 'ollama:<model>' (local, offline), or 'template' (instant deterministic record answer - same facts, canned phrasing)",
       "escalate": false,
       "sources": ["traits.md - Rump Angle  (which reference-corpus sections grounded the answer; empty for pure record answers - the app can show these as 'from official guidelines')"],
       "disclaimer": "shown under every answer in the app"
@@ -89,6 +89,18 @@
   "GET /voice-audio/{fname}": {
     "purpose": "fetch the spoken reply WAV referenced by audio_url",
     "response": "audio/wav file"
+  },
+
+  "GET /animals": {
+    "purpose": "roster for the app's animal picker and demo UIs",
+    "response": { "animals": [
+      { "animal_id": "356279812345", "species": "cattle", "breed": "Gir",
+        "village": "Anand", "eligible": true }
+    ] }
+  },
+
+  "GET /chat-ui": {
+    "purpose": "self-contained professional chat web page (text + voice) served by the backend - works offline, useful for demos and as a reference client"
   },
 
   "GET /alerts": {

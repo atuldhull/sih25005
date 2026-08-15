@@ -44,9 +44,17 @@ echo Your laptop's addresses (give Person 1 the hotspot one):
 powershell -NoProfile -Command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.*' } | ForEach-Object { '   http://' + $_.IPAddress + ':8000   (' + $_.InterfaceAlias + ')' }"
 echo.
 echo Interactive API docs: add /docs to any address above.
+echo Chat interface:       add /chat-ui to any address above.
 echo If the phone times out: it is the firewall rule above.
-echo The ML pipeline (ml/) is re-checked every 30s - no restart needed
-echo when Person 2's code lands.
+echo.
+echo HARD RULE: connect this laptop ONLY to the team's own hotspot -
+echo NEVER to open venue WiFi (no auth on the API; strangers could
+echo burn the free-tier LLM quota and read the demo data).
+echo VOICE NOTE: the mic in /chat-ui works on http://localhost:8000
+echo on THIS laptop; phones over plain http get text chat only
+echo (browsers require HTTPS for microphones).
+echo The ML pipeline (ml/) is re-checked every 30s, and keys.json is
+echo hot-reloaded - no restart needed for either.
 echo Press Ctrl+C to stop the server. MongoDB keeps running.
 echo.
 

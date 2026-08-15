@@ -7,6 +7,7 @@ server/.venv/
 # Secrets - never commit
 .env
 *.env
+server/keys.json
 
 # Flutter / app build output
 app/build/
