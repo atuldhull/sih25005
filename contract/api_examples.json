@@ -64,7 +64,7 @@
   "POST /chat": {
     "purpose": "farmer chatbot: ask about ONE animal, answered ONLY from its record + care advice. Devanagari question -> Hindi answer, otherwise English",
     "content_type": "application/json",
-    "request": { "animal_id": "356279812345", "message": "is her weight trend normal?" },
+    "request": { "animal_id": "356279812345", "message": "is her weight trend normal?", "language": "auto | en | hi | kn - forces the reply language (optional, default auto = follow the question's script)", "speak": "true -> response also carries audio_url with a spoken reply (optional, default false)" },
     "response": {
       "animal_id": "356279812345",
       "answer": "Your Gir's weight is around 398 kg (from the 2026-08-12 session). The trend is upward.",
@@ -76,6 +76,14 @@
     },
     "rule": "if escalate is true the app shows the urgent-vet banner prominently; emergency keywords in any supported language trigger it",
     "error_404": { "detail": "animal not found in BPA records" }
+  },
+
+  "POST /transcribe": {
+    "purpose": "speech-to-text ONLY - the app puts the text in the chat box for the farmer to review/correct before sending (preferred UX). STT chain: Gemini (rotating keys, strong Hindi/Kannada) -> local whisper",
+    "content_type": "multipart/form-data",
+    "fields": { "audio": "(file - wav/webm/mp3 recording, max 2 MB)" },
+    "response": { "heard": "मेरी गाय का वज़न कितना है?", "language": "hi" },
+    "error_422": { "detail": "could not hear any words - please record again closer to the phone" }
   },
 
   "POST /chat/voice": {

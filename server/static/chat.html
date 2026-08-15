@@ -155,6 +155,16 @@
     <label>Animal</label>
     <select id="animal"></select>
     <span class="badge" id="eligBadge" hidden></span>
+    <label style="margin-left:6px">Reply in</label>
+    <select id="lang" style="flex:0 0 130px">
+      <option value="auto">Auto</option>
+      <option value="en">English</option>
+      <option value="hi">हिंदी</option>
+      <option value="kn">ಕನ್ನಡ</option>
+    </select>
+    <label style="margin-left:6px;cursor:pointer;text-transform:none;letter-spacing:0">
+      <input type="checkbox" id="speak" checked style="vertical-align:-2px"> 🔊
+    </label>
   </div>
 
   <div id="chat"></div>
@@ -285,8 +295,10 @@
     try {
       const r = await fetchWithTimeout("/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ animal_id: sel.value, message: text }),
-      });
+        body: JSON.stringify({ animal_id: sel.value, message: text,
+                               language: $("lang").value,
+                               speak: $("speak").checked }),
+      }, 90000);
       typing.remove();
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -326,27 +338,25 @@
         stream.getTracks().forEach(t => t.stop());
         recording = false; $("mic").className = "btn";
         const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
-        addUser("🎙 (voice question)");
-        const typing = addTyping(); setBusy(true);
+        // transcribe ONLY - the text lands in the box for the farmer to
+        // review and correct before sending
+        setBusy(true);
         const fd = new FormData();
-        fd.append("animal_id", sel.value);
         fd.append("audio", blob, "question.webm");
         try {
-          const r = await fetchWithTimeout("/chat/voice", { method: "POST", body: fd }, 90000);
-          typing.remove();
+          const r = await fetchWithTimeout("/transcribe", { method: "POST", body: fd }, 45000);
           if (!r.ok) {
             const d = await r.json().catch(() => ({}));
-            addSystem(d.detail || "Could not process the recording.");
+            addSystem(d.detail || "Could not understand the recording — please try again.");
             return;
           }
           const data = await r.json();
-          const last = chat.querySelectorAll(".msg.user");
-          if (data.heard && last.length) last[last.length - 1].textContent = "🎙 " + data.heard;
-          addBot(data);
+          box.value = data.heard;
+          box.focus();
+          addSystem("Heard: “" + data.heard + "” — edit if needed, then press send.");
         } catch (e) {
-          typing.remove();
           addSystem(e.name === "AbortError"
-            ? "This is taking unusually long — please try again."
+            ? "Transcription is taking too long — please try again."
             : "Connection problem — please try again.");
         } finally { setBusy(false); }
       };

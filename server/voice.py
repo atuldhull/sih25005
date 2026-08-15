@@ -1,18 +1,36 @@
-"""Voice layer for the farmer chatbot - free and fully local.
+"""Voice layer for the farmer chatbot.
 
-STT: faster-whisper (CPU int8). First call downloads the model into
-the HF cache (HF_HOME, on D:) and keeps it loaded. Auto-detects the
-spoken language, so Hindi speech comes out as Devanagari text and the
-chat layer answers in Hindi automatically.
+STT chain: Gemini via the same rotating free-tier keys (excellent
+Hindi/Kannada, native script out) -> local faster-whisper (offline
+fallback; weaker on Indian languages, which is exactly why the UI now
+shows the transcription for review before sending).
 
-TTS: best-effort via Windows SAPI (pyttsx3). If a matching voice
-exists it returns a WAV; if not, the app simply shows text - the
-voice reply is a bonus, never a dependency.
+TTS chain: Microsoft Edge neural voices (free, no key, natural Indian
+voices for en/hi/kn - needs internet) -> Windows SAPI (offline,
+robotic but functional) -> text-only. synthesize() returns the actual
+file written (.mp3 for neural, .wav for SAPI) or None.
+
+All incoming audio (phones record webm/opus) is normalized to 16 kHz
+mono WAV locally with PyAV - bundled with faster-whisper, no ffmpeg
+install needed.
 """
 import os
+import re
 import threading
+from pathlib import Path
 
 STT_MODEL = os.environ.get("SIH_STT_MODEL", "base")
+
+# tests flip these off for deterministic offline behavior
+USE_CLOUD_STT = True
+USE_EDGE_TTS = True
+
+EDGE_VOICES = {"en": "en-IN-NeerjaNeural",
+               "hi": "hi-IN-SwaraNeural",
+               "kn": "kn-IN-SapnaNeural"}
+
+_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+_KANNADA = re.compile(r"[ಀ-೿]")
 
 _whisper = None
 _whisper_lock = threading.Lock()
@@ -25,6 +43,14 @@ class EngineUnavailable(Exception):
     distinct from 'this particular clip was not understandable'."""
 
 
+def _script_lang(text: str) -> str:
+    if _KANNADA.search(text):
+        return "kn"
+    if _DEVANAGARI.search(text):
+        return "hi"
+    return "en"
+
+
 def _get_whisper():
     global _whisper
     with _whisper_lock:
@@ -34,24 +60,78 @@ def _get_whisper():
     return _whisper
 
 
-def transcribe(audio_path: str) -> tuple[str, str]:
-    """Returns (text, detected_language_2letter). Empty text means THIS
-    clip was not understandable; a broken engine raises EngineUnavailable
-    so the server can answer 503 instead of a misleading 'record again'."""
+def normalize_to_wav(src_path: str, dst_path: str) -> bool:
+    """Any container/codec in (webm/opus, mp3, wav...) -> 16 kHz mono
+    s16 WAV. True on success."""
     try:
-        model = _get_whisper()
-    except Exception as e:
-        raise EngineUnavailable(str(e)[:200])
-    try:
-        segments, info = model.transcribe(audio_path, beam_size=1, vad_filter=True)
-        text = " ".join(s.text.strip() for s in segments).strip()
-        return text, (info.language or "en")
+        import av
+        from av.audio.resampler import AudioResampler
+        with av.open(src_path) as in_c:
+            in_stream = in_c.streams.audio[0]
+            resampler = AudioResampler(format="s16", layout="mono", rate=16000)
+            with av.open(dst_path, "w", format="wav") as out_c:
+                out_stream = out_c.add_stream("pcm_s16le", rate=16000,
+                                              layout="mono")
+                for frame in in_c.decode(in_stream):
+                    for rf in resampler.resample(frame):
+                        for pkt in out_stream.encode(rf):
+                            out_c.mux(pkt)
+                for pkt in out_stream.encode(None):
+                    out_c.mux(pkt)
+        return Path(dst_path).stat().st_size > 44
     except Exception:
-        return "", "en"
+        return False
 
 
-def synthesize(text: str, lang: str, out_path: str) -> bool:
-    """Write a WAV reply. True on success, False if no usable voice."""
+def transcribe(audio_path: str) -> tuple[str, str]:
+    """Returns (text, detected_language: en/hi/kn). Empty text means
+    THIS clip was not understandable; a broken engine raises
+    EngineUnavailable so the server can answer 503."""
+    wav_path = audio_path + ".norm.wav"
+    have_wav = normalize_to_wav(audio_path, wav_path)
+    try:
+        if USE_CLOUD_STT and have_wav:
+            import llm_providers
+            text = llm_providers.transcribe_cloud(
+                Path(wav_path).read_bytes(), mime="audio/wav")
+            if text:
+                return text, _script_lang(text)
+
+        try:
+            model = _get_whisper()
+        except Exception as e:
+            raise EngineUnavailable(str(e)[:200])
+        try:
+            segments, info = model.transcribe(
+                wav_path if have_wav else audio_path,
+                beam_size=1, vad_filter=True)
+            text = " ".join(s.text.strip() for s in segments).strip()
+            lang = _script_lang(text) if text else (info.language or "en")
+            return text, lang
+        except Exception:
+            return "", "en"
+    finally:
+        Path(wav_path).unlink(missing_ok=True)
+
+
+def _edge_tts(text: str, lang: str, out_path: str) -> bool:
+    try:
+        import asyncio
+
+        import edge_tts
+
+        async def run():
+            comm = edge_tts.Communicate(text, EDGE_VOICES.get(lang,
+                                                              EDGE_VOICES["en"]))
+            await asyncio.wait_for(comm.save(out_path), timeout=10.0)
+
+        asyncio.run(run())
+        return os.path.exists(out_path) and os.path.getsize(out_path) > 0
+    except Exception:
+        return False
+
+
+def _sapi_tts(text: str, lang: str, out_path: str) -> bool:
     with _tts_lock:
         try:
             # SAPI runs over COM, which must be initialized per-thread -
@@ -64,16 +144,14 @@ def synthesize(text: str, lang: str, out_path: str) -> bool:
                 pass
             import pyttsx3
             engine = pyttsx3.init()
-            if lang == "hi":
-                hindi = [v for v in engine.getProperty("voices")
-                         if "hindi" in (v.name or "").lower()
-                         or "hi-in" in (v.id or "").lower()
-                         or "kalpana" in (v.name or "").lower()]
-                if hindi:
-                    engine.setProperty("voice", hindi[0].id)
-                else:
+            if lang in ("hi", "kn"):
+                match = [v for v in engine.getProperty("voices")
+                         if lang == "hi" and ("hindi" in (v.name or "").lower()
+                                              or "kalpana" in (v.name or "").lower())]
+                if not match:
                     engine.stop()
-                    return False  # no Hindi voice - text-only is honest
+                    return False  # no local voice for this language - honest
+                engine.setProperty("voice", match[0].id)
             engine.setProperty("rate", 165)
             engine.save_to_file(text, out_path)
             engine.runAndWait()
@@ -81,3 +159,14 @@ def synthesize(text: str, lang: str, out_path: str) -> bool:
             return os.path.exists(out_path) and os.path.getsize(out_path) > 0
         except Exception:
             return False
+
+
+def synthesize(text: str, lang: str, out_base: str) -> str | None:
+    """Write a spoken reply. out_base is a path WITHOUT extension.
+    Returns the actual file path written (.mp3 neural / .wav SAPI),
+    or None when no voice is available - the app then shows text only."""
+    if USE_EDGE_TTS and _edge_tts(text, lang, out_base + ".mp3"):
+        return out_base + ".mp3"
+    if _sapi_tts(text, lang, out_base + ".wav"):
+        return out_base + ".wav"
+    return None

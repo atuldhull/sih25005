@@ -33,7 +33,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 # cheap insurance against quota-burn/CPU loops from strangers on the
 # network: per-IP sliding-window limits on the expensive endpoints.
 # Generous enough that no honest demo ever hits them.
-_RATE_LIMITS = {"/chat": (20, 60.0), "/chat/voice": (6, 60.0)}
+_RATE_LIMITS = {"/chat": (20, 60.0), "/chat/voice": (6, 60.0),
+                "/transcribe": (10, 60.0)}
 _rate_lock = threading.Lock()
 _rate_hits: dict = defaultdict(deque)
 
@@ -325,21 +326,59 @@ def get_overlay(session_id: str, trait_file: str):
 class ChatRequest(BaseModel):
     animal_id: str
     message: str = Field(..., max_length=500)
+    language: str = "auto"   # auto | en | hi | kn - forces reply language
+    speak: bool = False      # true -> also synthesize a spoken reply
 
 
 @app.post("/chat")
 def chat_with_record(body: ChatRequest):
     """Feature (i): ask anything about ONE animal, answered only from
-    its record + care advice. Hindi in -> Hindi out."""
+    its record + care advice, in the requested language."""
     animal = db.animals.find_one({"_id": body.animal_id})
     if animal is None:
         raise HTTPException(status_code=404, detail="animal not found in BPA records")
-    return chat.answer(db, animal, body.message)
+    override = body.language if body.language in ("en", "hi", "kn") else None
+    response = chat.answer(db, animal, body.message, lang_override=override)
+    response["audio_url"] = None
+    if body.speak:
+        VOICE_DIR.mkdir(parents=True, exist_ok=True)
+        base = str(VOICE_DIR / f"{uuid.uuid4().hex}.reply")
+        written = voice.synthesize(response["answer"], response["language"], base)
+        if written:
+            response["audio_url"] = f"/voice-audio/{Path(written).name}"
+    return response
+
+
+@app.post("/transcribe")
+def transcribe_only(audio: UploadFile = File(...)):
+    """Speech-to-text WITHOUT answering: the UI puts the text in the
+    chat box so the farmer can review/correct it before sending."""
+    VOICE_DIR.mkdir(parents=True, exist_ok=True)
+    in_path = VOICE_DIR / f"{uuid.uuid4().hex}.in"
+    data = audio.file.read(2 * 1024 * 1024 + 1)
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=413,
+                            detail="recording too large - keep questions "
+                                   "under ~1 minute")
+    in_path.write_bytes(data)
+    try:
+        heard, lang = voice.transcribe(str(in_path))
+    except voice.EngineUnavailable as e:
+        raise HTTPException(status_code=503,
+                            detail=f"speech engine unavailable: {e}")
+    finally:
+        in_path.unlink(missing_ok=True)
+    if not heard:
+        raise HTTPException(status_code=422,
+                            detail="could not hear any words - please record "
+                                   "again closer to the phone")
+    return {"heard": heard[:500], "language": lang}
 
 
 @app.post("/chat/voice")
 def chat_with_voice(animal_id: str = Form(...),
-                    audio: UploadFile = File(...)):
+                    audio: UploadFile = File(...),
+                    language: str = Form("auto")):
     """Spoken question in, grounded answer out - plus a spoken reply
     WAV when a matching Windows voice exists. Same grounding rules as
     /chat. Deliberately a sync endpoint: transcription + TTS take
@@ -373,25 +412,25 @@ def chat_with_voice(animal_id: str = Form(...),
     if len(heard) > 500:
         heard = heard[:500]
 
-    response = chat.answer(db, animal, heard)
+    override = language if language in ("en", "hi", "kn") else None
+    response = chat.answer(db, animal, heard, lang_override=override)
     response["heard"] = heard
 
-    reply_path = VOICE_DIR / f"{stem}.reply.wav"
-    if voice.synthesize(response["answer"], response["language"], str(reply_path)):
-        response["audio_url"] = f"/voice-audio/{stem}.reply.wav"
-    else:
-        response["audio_url"] = None
+    written = voice.synthesize(response["answer"], response["language"],
+                               str(VOICE_DIR / f"{stem}.reply"))
+    response["audio_url"] = f"/voice-audio/{Path(written).name}" if written else None
     return response
 
 
 @app.get("/voice-audio/{fname}")
 def get_voice_audio(fname: str):
-    if not re.fullmatch(r"[a-f0-9]+\.reply\.wav", fname):
+    if not re.fullmatch(r"[a-f0-9]+\.reply\.(wav|mp3)", fname):
         raise HTTPException(status_code=404, detail="unknown audio")
     path = VOICE_DIR / fname
     if not path.exists():
         raise HTTPException(status_code=404, detail="unknown audio")
-    return FileResponse(path, media_type="audio/wav")
+    return FileResponse(path, media_type="audio/mpeg" if fname.endswith(".mp3")
+                        else "audio/wav")
 
 
 @app.get("/alerts")

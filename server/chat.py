@@ -41,6 +41,7 @@ CHAT_MODEL = os.environ.get("SIH_CHAT_MODEL", "qwen2.5:7b")
 OLLAMA_TIMEOUT = httpx.Timeout(20.0, connect=3.0)
 
 _DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+_KANNADA = re.compile(r"[ಀ-೿]")
 
 # Emergency = specific distress PHRASES. Latin ones are word-bounded
 # regexes; Devanagari ones are multi-word phrases. Deliberately NOT
@@ -74,6 +75,8 @@ _INJECTION = re.compile(
 
 
 def detect_language(text: str) -> str:
+    if _KANNADA.search(text):
+        return "kn"
     return "hi" if _DEVANAGARI.search(text) else "en"
 
 
@@ -172,6 +175,8 @@ def _reply_ok(text: str | None, lang: str) -> bool:
         return False
     if lang == "hi" and not _DEVANAGARI.search(text):
         return False  # wrong language -> language-correct template instead
+    if lang == "kn" and not _KANNADA.search(text):
+        return False
     if "STRICT RULES" in text or "ANIMAL RECORD" in text:
         return False  # echoing hidden instructions -> discard
     return True
@@ -181,7 +186,8 @@ def _ask_llm(context_text: str, message: str, lang: str) -> tuple[str | None, st
     """Cloud chain first (rotating free-tier keys; best fluency,
     especially Hindi), local Ollama when offline or when every cloud
     reply fails validation. Returns (text, provider_label)."""
-    lang_name = "Hindi, written in Devanagari script" if lang == "hi" else "English"
+    lang_name = {"hi": "Hindi, written in Devanagari script",
+                 "kn": "Kannada, written in Kannada script"}.get(lang, "English")
     system = _SYSTEM.replace("{lang}", lang_name)
     user = f"ANIMAL RECORD:\n{context_text}\n\nFARMER'S QUESTION: {message}"
 
@@ -296,11 +302,15 @@ _URGENT_LINE = {
     "en": "URGENT: this sounds like an emergency. Contact your veterinary officer "
           "immediately - do not wait for the app.",
     "hi": "तुरंत: यह आपात स्थिति लगती है। अभी अपने पशु चिकित्सा अधिकारी से संपर्क करें - ऐप का इंतज़ार न करें।",
+    "kn": "ತುರ್ತು: ಇದು ತುರ್ತು ಪರಿಸ್ಥಿತಿ ಎಂದು ತೋರುತ್ತದೆ। ಈಗಲೇ ನಿಮ್ಮ ಪಶುವೈದ್ಯ ಅಧಿಕಾರಿಯನ್ನು ಸಂಪರ್ಕಿಸಿ।",
 }
 
 
-def answer(db, animal: dict, message: str) -> dict:
-    lang = detect_language(message)
+def answer(db, animal: dict, message: str, lang_override: str | None = None) -> dict:
+    """lang_override in {en, hi, kn} forces the reply language (the UI's
+    language selector); otherwise the question's script decides."""
+    lang = lang_override if lang_override in ("en", "hi", "kn") \
+        else detect_language(message)
     ctx = build_context(db, animal)
     escalate = is_emergency(message)
     injected = bool(_INJECTION.search(message))

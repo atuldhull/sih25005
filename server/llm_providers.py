@@ -228,6 +228,58 @@ def try_cloud(system: str, user: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+_STT_PROMPT = (
+    "Transcribe this audio recording exactly as spoken, in the speaker's "
+    "own language using its native script (Devanagari for Hindi, Kannada "
+    "script for Kannada, Latin for English). Output ONLY the transcription "
+    "text, nothing else. If the audio contains no clear speech, output "
+    "exactly: [no speech]")
+
+
+def transcribe_cloud(audio_bytes: bytes, mime: str = "audio/wav") -> str | None:
+    """Speech-to-text via the same rotating Gemini keys - dramatically
+    better Hindi/Kannada than the local whisper fallback. None when no
+    keys, quota exhausted, or no speech."""
+    import base64
+    _reload_if_changed()
+    pool = _state["gemini"]
+    for key in pool.usable_keys():
+        try:
+            r = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{_gemini_model()}:generateContent",
+                headers={"x-goog-api-key": key},
+                timeout=httpx.Timeout(20.0, connect=3.0),
+                json={
+                    "contents": [{"role": "user", "parts": [
+                        {"inlineData": {"mimeType": mime, "data":
+                         base64.b64encode(audio_bytes).decode()}},
+                        {"text": _STT_PROMPT},
+                    ]}],
+                    "generationConfig": {"temperature": 0.0,
+                                         "maxOutputTokens": 300,
+                                         "thinkingConfig": {"thinkingBudget": 0}},
+                })
+            if r.status_code == 429:
+                _log(f"gemini key {_tail(key)} hit quota during STT - rotating")
+                pool.cooldown(key, QUOTA_COOLDOWN)
+                continue
+            if r.status_code in (400, 401, 403):
+                pool.cooldown(key, BAD_KEY_COOLDOWN)
+                continue
+            r.raise_for_status()
+            cand = (r.json().get("candidates") or [{}])[0]
+            parts = ((cand.get("content") or {}).get("parts") or [])
+            text = " ".join(p.get("text", "") for p in parts).strip()
+            if not text or "[no speech]" in text.lower():
+                return None
+            return text
+        except Exception as e:
+            _log(f"gemini STT key {_tail(key)}: {type(e).__name__} - rotating")
+            pool.cooldown(key, QUOTA_COOLDOWN)
+    return None
+
+
 def status() -> dict:
     _reload_if_changed()
     return {
