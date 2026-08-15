@@ -96,13 +96,16 @@ def validate(result: dict, mode: str = "pipeline") -> list[str]:
     w = result.get("weight_kg")
     if not isinstance(w, dict):
         p.append("'weight_kg' must be an object {low, high, method, ...}")
+    elif w.get("low") is None and w.get("high") is None:
+        pass  # honest "could not measure" (no-fake-data rule) - the app
+        # shows "not measured" instead of an invented number
     else:
         if "method" not in w:
             p.append("weight_kg: missing 'method'")
         for k in ("low", "high"):
             if not isinstance(w.get(k), (int, float)):
-                p.append(f"weight_kg: '{k}' must be a number, "
-                         f"got {type(w.get(k)).__name__}")
+                p.append(f"weight_kg: '{k}' must be a number (or both null "
+                         f"when unmeasured), got {type(w.get(k)).__name__}")
         if isinstance(w.get("low"), (int, float)) and \
            isinstance(w.get("high"), (int, float)):
             if w["low"] > w["high"]:

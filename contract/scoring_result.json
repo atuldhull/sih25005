@@ -69,6 +69,7 @@
     "measured_value is evidence for the score, shown in the tap-to-explain screen",
     "measure_class: A=angle (no scale), B=ratio (no scale), C=needs ear-tag cm scale, SMAL=needs 3D model",
     "the 8 officially-subjective traits are allowed lower confidence - that is honest, not broken",
-    "buffalo: teat traits measured on left REAR teat; rump width landmarks differ"
+    "buffalo: teat traits measured on left REAR teat; rump width landmarks differ",
+    "weight_kg.low and .high are BOTH null when weight could not be measured - never a made-up number; the app shows 'not measured'"
   ]
 }

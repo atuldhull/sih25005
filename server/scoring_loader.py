@@ -66,9 +66,17 @@ def score_animal(side_img, rear_img, video_path, animal_record) -> dict:
             result = _real_score(side_img, rear_img, video_path, animal_record)
             problems = validate(result, mode="pipeline")
             if not problems:
-                result["engine"] = "ml-pipeline"
-                return result
-            reason = f"contract violations: {len(problems)} (e.g. {problems[0]})"
+                scored = sum(1 for t in result.get("traits", [])
+                             if isinstance(t, dict) and t.get("score") is not None)
+                if scored > 0:
+                    result["engine"] = "ml-pipeline"
+                    return result
+                # valid shape but nothing scored = the pipeline is wired
+                # but its ML models aren't installed/trained yet - keep
+                # the demo on the baseline until real scores exist
+                reason = "valid output but 0/20 traits scored (models not ready)"
+            else:
+                reason = f"contract violations: {len(problems)} (e.g. {problems[0]})"
         except Exception as e:
             reason = f"pipeline crashed: {e}"
     else:

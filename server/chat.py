@@ -224,6 +224,11 @@ def _template_answer(ctx: dict, message: str, lang: str) -> str | None:
                 "No scoring session has been done yet - run one first.")
 
     if any(w in low for w in ("weight", "wajan", "vajan", "वज़न", "वजन")):
+        if ls and not ls.get("weight_kg_mid"):
+            return (f"पिछले सत्र ({ls['date']}) में वज़न नहीं मापा जा सका। कान का टैग साफ दिखे ऐसी फोटो के साथ दोबारा सत्र करें।" if hi else
+                    f"Weight could not be measured in the last session "
+                    f"({ls['date']}). Retake the photos with the ear tag "
+                    "clearly visible.")
         if ls and ls.get("weight_kg_mid"):
             trend = ctx["weight_trend"]
             direction = ""

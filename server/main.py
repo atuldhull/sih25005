@@ -220,6 +220,10 @@ def create_session(
     result["session_id"] = device_session_id
     result["eligible"] = eligible
     result["eligible_reason"] = reason
+    # the server owns the BPA record - stamp registered breed if the
+    # pipeline left it blank
+    if not result.get("breed_registered"):
+        result["breed_registered"] = animal.get("breed")
 
     # screening layer: deterministic risk estimation from the symptom
     # vector (Person 2's detectors fill it; the VKG reasons over it)
@@ -247,13 +251,18 @@ def create_session(
             "report_vet": result["reports"]["vet"],
         })
 
-    weight = result["weight_kg"]
+    weight = result.get("weight_kg")
+    weight_mid = None
+    if isinstance(weight, dict) and \
+            isinstance(weight.get("low"), (int, float)) and \
+            isinstance(weight.get("high"), (int, float)):
+        weight_mid = (weight["low"] + weight["high"]) // 2
     try:
         db.sessions.insert_one({
             "session_id": device_session_id,
             "animal_id": animal_id,
             "date": date.today().isoformat(),
-            "weight_kg_mid": (weight["low"] + weight["high"]) // 2,
+            "weight_kg_mid": weight_mid,
             "health_flags": result["health_flags"],
             "files": saved,
             "result": dict(result),
