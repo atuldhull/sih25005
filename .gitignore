@@ -27,3 +27,6 @@ ml/datasets/
 # OS junk
 Thumbs.db
 .DS_Store
+
+# Test-generated debug output
+debug/

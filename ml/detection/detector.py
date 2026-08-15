@@ -1,4 +1,4 @@
-"""Detect animals and ear tags using RT-DETRv2 (HuggingFace transformers), with SAM2
+﻿"""Detect animals and ear tags using RT-DETRv2 (HuggingFace transformers), with SAM2
 foreground segmentation.
 
 Inference wiring only - no training code. Loads a fine-tuned checkpoint (exported in
@@ -20,8 +20,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from common.schemas import DetectionResult
-from config.detection import (
+from ml.common.schemas import DetectionResult
+from ml.config.detection import (
     CANONICAL_CLASS_NAMES,
     DEFAULT_DEVICE,
     DEBUG_DIR,

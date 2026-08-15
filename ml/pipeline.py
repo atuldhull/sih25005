@@ -1,20 +1,19 @@
-"""Top-level pipeline orchestrator chaining all implemented stages into score_animal()."""
-
+﻿"""Top-level pipeline orchestrator chaining all implemented stages into score_animal()."""
 from typing import Dict, List, Optional
 
-from common.schemas import MeasurementResult
-from detection.detector import (
+from ml.common.schemas import MeasurementResult
+from ml.detection.detector import (
     DetectionBackendError,
     DetectionLabelError,
     detect_animal,
     detect_ear_tag,
 )
-from explainability.explainer import assemble_explainability
-from explainability.result_builder import build_scoring_result, scoring_result_to_dict
-from ingestion.quality_validation import validate_image, validate_video
-from measurement.traits import measure_all_traits
-from scoring.scorer import check_eligibility, determine_status, score_all_traits
-from weight.estimator import estimate_weight
+from ml.explainability.explainer import assemble_explainability
+from ml.explainability.result_builder import build_scoring_result, scoring_result_to_dict
+from ml.ingestion.quality_validation import validate_image, validate_video
+from ml.measurement.traits import measure_all_traits
+from ml.scoring.scorer import check_eligibility, determine_status, score_all_traits
+from ml.weight.estimator import estimate_weight
 
 KEYPOINT_CONFIDENCE_MIN = 0.3
 

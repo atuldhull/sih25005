@@ -1,9 +1,9 @@
-"""Scoring engine: maps trait measurements to 1-9 scores and eligibility/status gates."""
+﻿"""Scoring engine: maps trait measurements to 1-9 scores and eligibility/status gates."""
 
 from typing import List
 
-from common.schemas import EligibilityResult, MeasurementResult, ScoreResult
-from config.rules import score_from_value, SPECIES_RULES
+from ml.common.schemas import EligibilityResult, MeasurementResult, ScoreResult
+from ml.config.rules import score_from_value, SPECIES_RULES
 
 VALID_SPECIES = tuple(SPECIES_RULES)
 

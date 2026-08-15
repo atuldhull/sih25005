@@ -1,9 +1,9 @@
-"""Result contract builder: final assembly point producing the top-level ScoringResult."""
+﻿"""Result contract builder: final assembly point producing the top-level ScoringResult."""
 
 from dataclasses import is_dataclass
 from typing import Dict, List, Optional
 
-from common.schemas import (
+from ml.common.schemas import (
     EligibilityResult,
     MeasurementResult,
     ScoreResult,
@@ -12,8 +12,8 @@ from common.schemas import (
     TagResult,
     WeightResult,
 )
-from config.traits import get_contract_traits
-from explainability.explainer import generate_trait_explanation, generate_overlay_data
+from ml.config.traits import get_contract_traits
+from ml.explainability.explainer import generate_trait_explanation, generate_overlay_data
 
 
 def build_scoring_result(
@@ -83,8 +83,6 @@ def _to_jsonable(obj):
 
 
 
-from config.traits import get_contract_traits
-from explainability.explainer import generate_trait_explanation, generate_overlay_data
 
 
 def to_contract_dict(

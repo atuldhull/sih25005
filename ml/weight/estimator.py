@@ -1,4 +1,4 @@
-"""PLACEHOLDER weight estimator using Schaeffer's livestock formula.
+﻿"""PLACEHOLDER weight estimator using Schaeffer's livestock formula.
 
 This is a formula-based heuristic, NOT a trained model. The real implementation
 will be a fine-tuned girth/length -> weight regression per architecture Section 5
@@ -7,7 +7,7 @@ once training data linking visual measurements to actual weight is collected.
 
 from typing import List
 
-from common.schemas import MeasurementResult, WeightResult
+from ml.common.schemas import MeasurementResult, WeightResult
 
 SCHAFFER_DIVISOR = 10838.4
 MIN_WEIGHT_FACTOR = 0.85
