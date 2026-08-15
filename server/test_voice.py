@@ -33,8 +33,11 @@ def main():
     print(f"PASS  whisper transcribed it: {heard!r} (lang {lang})")
 
     # deterministic answers for the assertion: force the template path
+    # (dead Ollama + stubbed cloud chain)
     real_url = chat.OLLAMA_URL
+    real_cloud = chat.llm_providers.try_cloud
     chat.OLLAMA_URL = "http://127.0.0.1:9"
+    chat.llm_providers.try_cloud = lambda s, u: (None, None)
     try:
         with question_wav.open("rb") as f:
             r = client.post("/chat/voice",
@@ -60,6 +63,7 @@ def main():
         print("PASS  voice-audio path traversal rejected")
     finally:
         chat.OLLAMA_URL = real_url
+        chat.llm_providers.try_cloud = real_cloud
 
 
 if __name__ == "__main__":

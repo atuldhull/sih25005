@@ -35,9 +35,12 @@ def main():
     finally:
         rag.OLLAMA_URL = real
 
-    # deterministic knowledge answer through /chat (template path)
+    # deterministic knowledge answer through /chat (template path);
+    # stub the cloud chain too in case this machine has real keys
     real_chat = chat.OLLAMA_URL
+    real_cloud = chat.llm_providers.try_cloud
     chat.OLLAMA_URL = "http://127.0.0.1:9"
+    chat.llm_providers.try_cloud = lambda s, u: (None, None)
     try:
         r = client.post("/chat", json={"animal_id": ELIGIBLE,
                                        "message": "what does rump angle mean?"})
@@ -56,6 +59,7 @@ def main():
         print("PASS  record questions still answered from the record, no hijack")
     finally:
         chat.OLLAMA_URL = real_chat
+        chat.llm_providers.try_cloud = real_cloud
 
 
 if __name__ == "__main__":

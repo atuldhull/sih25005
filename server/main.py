@@ -1,10 +1,13 @@
+import os
 import re
+import time
+from collections import defaultdict, deque
 from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
@@ -26,6 +29,31 @@ app = FastAPI(title="SIH25005 Backend")
 # quick HTML test pages) - native apps ignore CORS entirely
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
+
+# cheap insurance against quota-burn/CPU loops from strangers on the
+# network: per-IP sliding-window limits on the expensive endpoints.
+# Generous enough that no honest demo ever hits them.
+_RATE_LIMITS = {"/chat": (20, 60.0), "/chat/voice": (6, 60.0)}
+_rate_lock = threading.Lock()
+_rate_hits: dict = defaultdict(deque)
+
+
+@app.middleware("http")
+async def _rate_limit(request, call_next):
+    lim = _RATE_LIMITS.get(request.url.path)
+    if lim and request.client:
+        max_hits, window = lim
+        bucket = _rate_hits[(request.client.host, request.url.path)]
+        now = time.time()
+        with _rate_lock:
+            while bucket and now - bucket[0] > window:
+                bucket.popleft()
+            if len(bucket) >= max_hits:
+                return JSONResponse(status_code=429, content={
+                    "detail": "too many requests from this device - "
+                              "please wait a minute"})
+            bucket.append(now)
+    return await call_next(request)
 
 client = MongoClient("mongodb://127.0.0.1:27017", serverSelectionTimeoutMS=3000)
 db = client["sih25005"]
@@ -95,8 +123,39 @@ def _slug(name: str) -> str:
 
 @app.get("/ping")
 def ping():
+    import llm_providers
+    chain = llm_providers.status()
+    if not os.environ.get("SIH_DEBUG"):
+        # don't advertise how many keys the team holds to the network
+        chain = {"cloud_configured": chain["gemini_keys"] > 0
+                 or bool(chain["compat_providers"])}
     return {"status": "ok", "service": "sih25005-server",
-            "scoring_engine": engine_status()}
+            "scoring_engine": engine_status(),
+            "llm_chain": chain}
+
+
+@app.get("/animals")
+def list_animals():
+    """Roster for demo UIs and the app's animal picker."""
+    out = []
+    try:
+        for a in db.animals.find({}).sort("_id", 1):
+            eligible, _ = check_eligibility(a)
+            out.append({"animal_id": a["_id"], "species": a["species"],
+                        "breed": a["breed"], "village": a["village"],
+                        "eligible": eligible})
+    except Exception:
+        raise HTTPException(status_code=503,
+                            detail="database unreachable - start MongoDB "
+                                   "(run_server.bat does this)")
+    return {"animals": out}
+
+
+@app.get("/chat-ui")
+def chat_ui():
+    """The professional chat interface - self-contained, offline-safe."""
+    return FileResponse(Path(__file__).parent / "static" / "chat.html",
+                        media_type="text/html")
 
 
 @app.get("/animal/{animal_id}")
@@ -284,7 +343,12 @@ def chat_with_voice(animal_id: str = Form(...),
     VOICE_DIR.mkdir(parents=True, exist_ok=True)
     stem = uuid.uuid4().hex
     in_path = VOICE_DIR / f"{stem}.in.wav"
-    in_path.write_bytes(audio.file.read())
+    data = audio.file.read(2 * 1024 * 1024 + 1)
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=413,
+                            detail="recording too large - keep questions "
+                                   "under ~1 minute")
+    in_path.write_bytes(data)
 
     try:
         heard, _ = voice.transcribe(str(in_path))
