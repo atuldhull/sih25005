@@ -1,0 +1,92 @@
+{
+  "_comment": "API CONTRACT v1 - what Person 1's app calls on Person 3's server. Base URL in dev: http://<person3-laptop-ip>:8000",
+
+  "GET /ping": {
+    "purpose": "is the server alive?",
+    "response": { "status": "ok", "service": "sih25005-server" }
+  },
+
+  "GET /animal/{animal_id}": {
+    "purpose": "profile + eligibility after the app scans an ear tag",
+    "example_request": "GET /animal/356279812345",
+    "response": {
+      "animal_id": "356279812345",
+      "species": "cattle",
+      "breed": "Gir",
+      "dob": "2022-11-03",
+      "lactation_no": 1,
+      "last_calving_date": "2026-06-26",
+      "owner": "Ramesh Kumar",
+      "village": "Anand",
+      "eligible": true,
+      "eligible_reason": "first lactation, day 47 after calving"
+    },
+    "error_404": { "detail": "animal not found in BPA records" }
+  },
+
+  "POST /session": {
+    "purpose": "upload one scoring session (photos + video + metadata), get the scored result back",
+    "content_type": "multipart/form-data",
+    "fields": {
+      "animal_id": "356279812345",
+      "device_session_id": "app-generated unique id, used to prevent duplicates on retry",
+      "side_photo": "(file)",
+      "rear_photo": "(file)",
+      "gait_video": "(file)"
+    },
+    "response": "the full scoring_result.json object (see scoring_result.json)",
+    "response_on_retry": "same object with extra field duplicate:true - the app treats it as success and marks the queued session synced",
+    "error_404": { "detail": "animal not found in BPA records" },
+    "error_422": { "detail": "animal not eligible: not in first lactation (currently lactation 2)" }
+  },
+
+  "GET /animal/{animal_id}/history": {
+    "purpose": "past sessions for trends",
+    "response": {
+      "animal_id": "356279812345",
+      "sessions": [
+        { "session_id": "dev-a1b2c3d4", "date": "2026-08-12", "weight_kg_mid": 398, "health_flags": ["locomotion_abnormal"] }
+      ]
+    }
+  },
+
+  "POST /sync": {
+    "purpose": "reconcile the offline queue: app asks which queued sessions the server already has",
+    "content_type": "application/json",
+    "request": { "device_session_ids": ["test-session-001", "ghost-999"] },
+    "response": { "results": [
+      { "device_session_id": "test-session-001", "status": "exists" },
+      { "device_session_id": "ghost-999", "status": "missing" }
+    ] },
+    "rule": "exists -> app marks it synced locally; missing -> app re-uploads it via POST /session (which is retry-safe and returns duplicate:true if it actually arrived)"
+  },
+
+  "POST /chat": {
+    "purpose": "farmer chatbot: ask about ONE animal, answered ONLY from its record + care advice. Devanagari question -> Hindi answer, otherwise English",
+    "content_type": "application/json",
+    "request": { "animal_id": "356279812345", "message": "is her weight trend normal?" },
+    "response": {
+      "animal_id": "356279812345",
+      "answer": "Your Gir's weight is around 398 kg (from the 2026-08-12 session). The trend is upward.",
+      "language": "en",
+      "model": "ollama:qwen2.5:7b  (or 'template' when the local LLM is unavailable - same facts, canned phrasing)",
+      "escalate": false,
+      "disclaimer": "shown under every answer in the app"
+    },
+    "rule": "if escalate is true the app shows the urgent-vet banner prominently; emergency keywords in any supported language trigger it",
+    "error_404": { "detail": "animal not found in BPA records" }
+  },
+
+  "GET /alerts": {
+    "purpose": "vet officer's notification feed - escalated screenings (high risk or herd outbreak signal), newest first",
+    "response": { "alerts": [
+      { "animal_id": "356279812345", "village": "Anand", "date": "2026-08-12",
+        "top_risks": ["hoof_lameness"], "herd_alerts": [], "report_vet": "..." }
+    ] }
+  },
+
+  "GET /overlays/{session_id}/{trait_name}.jpg": {
+    "purpose": "the explainability image for one trait (photo with keypoints + measurement drawn)",
+    "response": "static JPEG file"
+  }
+}

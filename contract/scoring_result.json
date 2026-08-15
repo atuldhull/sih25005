@@ -1,0 +1,74 @@
+{
+  "_comment": "FROZEN CONTRACT v1. Person 1 renders this. Person 2 produces this. Person 3 transports this. Changes need all-3 agreement, same day, announced in group chat.",
+
+  "session_id": "dev-a1b2c3d4",
+  "animal_id": "356279812345",
+  "species": "cattle",
+  "breed_registered": "Gir",
+  "breed_verified": true,
+  "breed_verify_confidence": 0.91,
+
+  "eligible": true,
+  "eligible_reason": "first lactation, day 47 after calving",
+
+  "captured": {
+    "side_photo": true,
+    "rear_photo": true,
+    "gait_video": true
+  },
+
+  "traits": [
+    { "name": "Stature", "category": "Dairy Strength", "score": 6, "confidence": 0.88, "measured_value": "138 cm", "ci": "135-141 cm", "measure_class": "C", "view": "side", "overlay_points": [[512, 120], [512, 655]], "explanation": "Height from ground to top of the withers." },
+    { "name": "Heart Girth", "category": "Dairy Strength", "score": 7, "confidence": 0.74, "measured_value": "182 cm", "ci": "175-189 cm", "measure_class": "SMAL", "view": "side", "overlay_points": [[430, 300], [438, 520]], "explanation": "Circumference of the chest just behind the front legs, from the 3D body model." },
+    { "name": "Body Length", "category": "Dairy Strength", "score": 6, "confidence": 0.86, "measured_value": "151 cm", "ci": "147-155 cm", "measure_class": "C", "view": "side", "overlay_points": [[310, 260], [740, 275]], "explanation": "Point of shoulder to pin bone." },
+    { "name": "Body Depth", "category": "Dairy Strength", "score": 7, "confidence": 0.85, "measured_value": "78 cm", "ci": "75-81 cm", "measure_class": "C", "view": "side", "overlay_points": [[470, 250], [470, 500]], "explanation": "Depth of the barrel at the last rib." },
+    { "name": "Angularity", "category": "Dairy Strength", "score": 6, "confidence": 0.81, "measured_value": "21 deg", "ci": null, "measure_class": "A", "view": "side", "overlay_points": [[455, 240], [520, 300], [590, 310]], "explanation": "Openness and angle of the rib structure." },
+
+    { "name": "Rump Angle", "category": "Rump", "score": 5, "confidence": 0.89, "measured_value": "4 deg slope", "ci": null, "measure_class": "A", "view": "side", "overlay_points": [[660, 235], [742, 258]], "explanation": "Slope from hip bone to pin bone." },
+    { "name": "Rump Width", "category": "Rump", "score": 6, "confidence": 0.77, "measured_value": "19 cm", "ci": "17-21 cm", "measure_class": "C", "view": "rear", "overlay_points": [[380, 310], [520, 310]], "explanation": "Distance between the pin bones." },
+
+    { "name": "Rear Legs Set", "category": "Feet & Legs", "score": 5, "confidence": 0.72, "measured_value": "152 deg", "ci": null, "measure_class": "A", "view": "side", "overlay_points": [[700, 420], [712, 520], [690, 640]], "explanation": "Angle at the hock, side view. Subjective trait - wider uncertainty is normal." },
+    { "name": "Rear Legs Rear View", "category": "Feet & Legs", "score": 6, "confidence": 0.68, "measured_value": null, "ci": null, "measure_class": "B", "view": "video", "overlay_points": [[400, 500], [500, 500]], "explanation": "Straightness of the legs seen from behind, judged across the walking video. Subjective trait." },
+    { "name": "Foot Angle", "category": "Feet & Legs", "score": 5, "confidence": 0.70, "measured_value": "47 deg", "ci": null, "measure_class": "A", "view": "side", "overlay_points": [[695, 640], [720, 660]], "explanation": "Angle of the front hoof wall to the ground. Subjective trait." },
+
+    { "name": "Fore Udder Attachment", "category": "Udder", "score": 6, "confidence": 0.69, "measured_value": null, "ci": null, "measure_class": "B", "view": "side", "overlay_points": [[560, 480], [600, 520]], "explanation": "How strongly the front of the udder blends into the body wall. Subjective trait." },
+    { "name": "Rear Udder Height", "category": "Udder", "score": 7, "confidence": 0.78, "measured_value": "24 cm", "ci": "22-26 cm", "measure_class": "C", "view": "rear", "overlay_points": [[450, 380], [450, 470]], "explanation": "Distance from vulva base to the milk-secreting tissue." },
+    { "name": "Central Ligament", "category": "Udder", "score": 6, "confidence": 0.66, "measured_value": null, "ci": null, "measure_class": "B", "view": "rear", "overlay_points": [[450, 470], [450, 540]], "explanation": "Depth of the cleft between the two udder halves. Subjective trait." },
+    { "name": "Udder Depth", "category": "Udder", "score": 6, "confidence": 0.80, "measured_value": "6 cm above hock", "ci": "4-8 cm", "measure_class": "C", "view": "rear", "overlay_points": [[450, 540], [450, 600]], "explanation": "Udder floor position relative to the hock." },
+    { "name": "Front Teat Placement", "category": "Udder", "score": 5, "confidence": 0.67, "measured_value": null, "ci": null, "measure_class": "B", "view": "rear", "overlay_points": [[420, 560], [480, 560]], "explanation": "Position of front teats on their quarters. Subjective trait." },
+    { "name": "Teat Length", "category": "Udder", "score": 5, "confidence": 0.75, "measured_value": "5.2 cm", "ci": "4.6-5.8 cm", "measure_class": "C", "view": "rear", "overlay_points": [[425, 560], [425, 605]], "explanation": "Measured on the left front teat for cattle, left REAR teat for buffalo." },
+    { "name": "Rear Teat Placement", "category": "Udder", "score": 6, "confidence": 0.65, "measured_value": null, "ci": null, "measure_class": "B", "view": "rear", "overlay_points": [[435, 555], [465, 555]], "explanation": "Position of rear teats on their quarters. Subjective trait." },
+    { "name": "Rear Udder Width", "category": "Udder", "score": 6, "confidence": 0.76, "measured_value": "14 cm", "ci": "12-16 cm", "measure_class": "C", "view": "rear", "overlay_points": [[410, 470], [490, 470]], "explanation": "Width of the rear udder attachment." },
+    { "name": "Teat Thickness", "category": "Udder", "score": null, "confidence": 0.41, "measured_value": null, "ci": null, "measure_class": "C", "view": "rear", "overlay_points": [], "explanation": null, "not_scored_reason": "Teats not clearly visible in the rear photo - confidence too low. Retake closer rear photo to score this trait." },
+
+    { "name": "Body Condition Score", "category": "General", "score": 5, "confidence": 0.79, "measured_value": null, "ci": null, "measure_class": "SMAL", "view": "side", "overlay_points": [[640, 240], [700, 250], [730, 270]], "explanation": "Fat cover assessed from pelvic and tailhead surface shape. Subjective trait." }
+  ],
+
+  "weight_kg": { "low": 385, "high": 412, "method": "girth-length-regression", "cross_check": "smal-volume: 396" },
+
+  "symptom_vector": [
+    { "symptom": "gait_asymmetry", "confidence": 0.78, "region": "legs", "source": "video" }
+  ],
+  "risk_report": [
+    { "condition": "hoof_lameness", "label": "Lameness (hoof origin)", "urgency": "medium", "risk": "medium", "score": 0.42, "because_of": ["gait_asymmetry"], "action": "refer to vet" }
+  ],
+  "herd_alerts": [],
+  "reports": {
+    "farmer": "plain-language summary for the farmer (always ends with the not-a-diagnosis disclaimer)",
+    "vet": "technical summary for the veterinary officer"
+  },
+  "escalated": false,
+  "health_flags": ["locomotion_abnormal"],
+
+  "captured_at": "2026-08-12T10:30:00+05:30",
+  "synced": false,
+
+  "_rules_for_all_three_of_us": [
+    "score is null when the system refuses to score - the app MUST show not_scored_reason, never a fake number",
+    "1 and 9 are biological extremes, not bad/good - the app must NEVER color-code scores as quality",
+    "measured_value is evidence for the score, shown in the tap-to-explain screen",
+    "measure_class: A=angle (no scale), B=ratio (no scale), C=needs ear-tag cm scale, SMAL=needs 3D model",
+    "the 8 officially-subjective traits are allowed lower confidence - that is honest, not broken",
+    "buffalo: teat traits measured on left REAR teat; rump width landmarks differ"
+  ]
+}
