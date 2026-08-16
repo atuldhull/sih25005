@@ -1,0 +1,41 @@
+name: pashu_scorer
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  camera: ^0.12.0+1
+  image_picker: ^1.2.2
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  path_provider: ^2.1.5
+  connectivity_plus: ^7.3.1
+  http: ^1.6.0
+  fl_chart: ^1.2.0
+  permission_handler: 13.0.1
+  video_player: ^2.10.1
+  camera_platform_interface: ^2.13.0
+
+dependency_overrides:
+  permission_handler_android: 13.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+
+flutter:
+
+  uses-material-design: true
+
+  assets:
+    - assets/demo/cow_ear_tag.png
