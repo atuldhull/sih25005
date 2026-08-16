@@ -61,10 +61,35 @@ def _compute_angle(points: List[Keypoint]) -> Optional[float]:
         cos_theta = max(-1.0, min(1.0, cos_theta))
         return math.degrees(math.acos(cos_theta))
     if len(pts) == 2:
-        return math.degrees(math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0]))
-    return None
+        raw_angle = math.degrees(math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0]))
+        # Fold into (-90, 90]: a line's orientation is direction-agnostic, so
+        # atan2 can return an angle 180 degrees away for the same physical
+        # slope depending on point/facing order (e.g. 5.7 vs 174.3 degrees).
+        if raw_angle > 90.0:
+            raw_angle -= 180.0
+        elif raw_angle <= -90.0:
+            raw_angle += 180.0
+        return raw_angle
+def _compute_leg_set_angle(points: List[Keypoint]) -> Optional[float]:
+    """Per-leg deviation from vertical, averaged left/right, for leg-set traits.
 
-
+    Expects points ordered [hip_left, hip_right, hock_left, hock_right], matching
+    rear_legs_set's required_keypoints order. Each leg's hip->hock vector angle
+    from vertical (0 = straight down) is computed independently. The right leg's
+    deviation is mirrored before averaging: the right side is anatomically
+    mirrored relative to the left, so without mirroring, a symmetric inward lean
+    on both hocks (cow-hocked) cancels to 0 instead of registering as a
+    deviation. This differs from the generic _reduce_points() pairing, which
+    merges hip_bone_left+hip_bone_right and hock_left+hock_right into two
+    midpoints and measures the angle between those (also degenerate: masks
+    cow-hocked animals instead of detecting them).
+    """
+    if len(points) != 4:
+        return None
+    hip_left, hip_right, hock_left, hock_right = points
+    left_dev = math.degrees(math.atan2(hock_left[0] - hip_left[0], hock_left[1] - hip_left[1]))
+    right_dev = math.degrees(math.atan2(hock_right[0] - hip_right[0], hock_right[1] - hip_right[1]))
+    return (left_dev - right_dev) / 2.0
 def _compute_ratio(points: List[Keypoint]) -> Optional[float]:
     """Ratio of the distance between the first point-pair to the second point-pair."""
     if len(points) < 4:
@@ -127,7 +152,10 @@ def measure_trait(
         )
 
     if trait_class == "A":
-        value = _compute_angle(points)
+        if trait_id == "rear_legs_set":
+            value = _compute_leg_set_angle(points)
+        else:
+            value = _compute_angle(points)
     elif trait_class == "B":
         value = _compute_ratio(points)
     else:  # Class C
