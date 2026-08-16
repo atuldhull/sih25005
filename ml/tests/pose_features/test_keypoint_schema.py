@@ -28,13 +28,15 @@ SAMPLE = {
 # Schema contract
 # ---------------------------------------------------------------------------
 class TestSchema:
-    def test_schema_has_24_contiguous_indices(self):
-        assert len(KEYPOINT_SCHEMA) == 24
+    def test_schema_has_41_contiguous_indices(self):
+        assert len(KEYPOINT_SCHEMA) == 41
         indices = [e["index"] for e in KEYPOINT_SCHEMA]
-        assert indices == list(range(24))
+        assert indices == list(range(41))
 
     def test_names_unique_and_match_lookup_tables(self):
-        assert len(set(KEYPOINT_NAMES)) == 24
+        assert len(set(KEYPOINT_NAMES)) == 41
+
+    
         assert all(get_keypoint_index(n) == i for i, n in enumerate(KEYPOINT_NAMES))
         assert all(get_keypoint_name(i) == n for i, n in enumerate(KEYPOINT_NAMES))
 
@@ -55,7 +57,7 @@ class TestIdentity:
         assert out["chest_front"] == (160, 340, 0.91)
         assert out["hock_left"].confidence == pytest.approx(0.90)
 
-    def test_all_24_canonical_keys_present_and_unprovided_are_zero_conf(self):
+    def test_all_41_canonical_keys_present_and_unprovided_are_zero_conf(self):
         out = normalize_keypoints(SAMPLE, "identity")
         assert set(out) == set(KEYPOINT_NAMES)
         for name in KEYPOINT_NAMES:

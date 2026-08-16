@@ -1,4 +1,4 @@
-"""Canonical 24-point keypoint schema and the pose-model normalization seam.
+"""Canonical 41-point keypoint schema and the pose-model normalization seam.
 
 The measurement engine (measurement/traits.py + config/traits.py) indexes animal
 keypoints by fixed anatomical names (e.g. "withers", "hook_left", "pastern_left").
@@ -7,11 +7,12 @@ use indexed or differently-named joints (COCO-animal, AP-10K, bovine sets). This
 module is the single seam that maps a pose model's raw output onto the canonical
 skeleton before measurement runs.
 
-KEYPOINT_SCHEMA is the project's canonical skeleton order (24 joints, indices
-0-23). Whatever checkpoint is chosen later, normalize_keypoints() must translate
-its native output into this schema, and any joint the source cannot resolve maps
-to KeypointResult(0, 0, 0.0) so measurement's 0.3-confidence filter marks the
-dependent traits not_measurable (fail-local, never a crash).
+KEYPOINT_SCHEMA is the project's canonical skeleton order (41 joints, indices
+0-40: the original 24 body/leg joints plus 17 udder/teat joints required by the
+9 contract udder traits). Whatever checkpoint is chosen later, normalize_keypoints()
+must translate its native output into this schema, and any joint the source cannot
+resolve maps to KeypointResult(0, 0, 0.0) so measurement's 0.3-confidence filter
+marks the dependent traits not_measurable (fail-local, never a crash).
 """
 
 from typing import Dict, List, NamedTuple, Sequence, Tuple, Union
@@ -64,6 +65,23 @@ KEYPOINT_SCHEMA: List[Dict[str, object]] = [
     {"keypoint_id": "hoof_left", "index": 21},
     {"keypoint_id": "hoof_right", "index": 22},
     {"keypoint_id": "rear_udder", "index": 23},
+    {"keypoint_id": "fore_udder_top", "index": 24},
+    {"keypoint_id": "fore_udder_body_junction", "index": 25},
+    {"keypoint_id": "vulva_base", "index": 26},
+    {"keypoint_id": "rear_udder_top", "index": 27},
+    {"keypoint_id": "udder_cleft_top", "index": 28},
+    {"keypoint_id": "udder_cleft_bottom", "index": 29},
+    {"keypoint_id": "udder_floor", "index": 30},
+    {"keypoint_id": "teat_front_left", "index": 31},
+    {"keypoint_id": "teat_front_right", "index": 32},
+    {"keypoint_id": "teat_front_left_top", "index": 33},
+    {"keypoint_id": "teat_front_left_bottom", "index": 34},
+    {"keypoint_id": "teat_rear_left", "index": 35},
+    {"keypoint_id": "teat_rear_right", "index": 36},
+    {"keypoint_id": "rear_udder_left", "index": 37},
+    {"keypoint_id": "rear_udder_right", "index": 38},
+    {"keypoint_id": "teat_width_left_1", "index": 39},
+    {"keypoint_id": "teat_width_left_2", "index": 40},
 ]
 
 KEYPOINT_NAMES: List[str] = [str(e["keypoint_id"]) for e in KEYPOINT_SCHEMA]
@@ -84,7 +102,7 @@ def get_keypoint_index(keypoint_id: str) -> int:
 
 
 def get_keypoint_name(index: int) -> str:
-    """Return the canonical anatomical name for an index (0-23)."""
+    """Return the canonical anatomical name for an index (0-40)."""
     if index not in KEYPOINT_NAME_BY_INDEX:
         raise KeyError(f"Unknown keypoint index {index!r}. Valid indices: 0-{len(KEYPOINT_SCHEMA) - 1}")
     return KEYPOINT_NAME_BY_INDEX[index]
@@ -98,7 +116,7 @@ def normalize_keypoints(
     raw_keypoints: object,
     source_format: str = "identity",
 ) -> Dict[str, KeypointResult]:
-    """Map raw pose-model output onto the canonical 24-point keypoint dict.
+    """Map raw pose-model output onto the canonical 41-point keypoint dict.
 
     Returns a dict keyed by the canonical anatomical names ready to hand to
     measurement/traits.py exactly as the simulated fixture data does today.
@@ -118,7 +136,7 @@ def normalize_keypoints(
         raise NotImplementedError(
             f"source_format={source_format!r} is not implemented yet. Once an RTMPose "
             "checkpoint is chosen, teach normalize_keypoints() to map its native joint "
-            "order/names onto KEYPOINT_SCHEMA (indices 0-23); unresolved joints should "
+            "order/names onto KEYPOINT_SCHEMA (indices 0-40); unresolved joints should "
             "become confidence=0.0 joints, not be omitted."
         )
 
