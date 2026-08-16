@@ -1,7 +1,6 @@
 """Species rule tables mapping trait measurements to 1-9 scores, plus scoring helpers."""
 
-from typing import List, Tuple
-
+from typing import List, Optional, Tuple
 
 def _bins(min_v: float, max_v: float, reverse: bool = False) -> List[Tuple[float, float, int]]:
     """Generate 9 contiguous bins spanning [min_v, max_v] mapped to scores 1-9.
@@ -127,21 +126,18 @@ SPECIES_RULES = {
 }
 
 
-def score_from_value(trait_id: str, species: str, value: float) -> Tuple[int, float]:
+def score_from_value(trait_id: str, species: str, value: float) -> Tuple[Optional[int], float]:
     """Map a trait measurement to a (score_1_9, confidence) for the given species.
 
     Confidence is highest (~0.95) when the value sits in the middle of a bin and
-    lowest (~0.45) at bin boundaries, dropping to 0.3 when the value falls
-    entirely outside the calibrated range.
+    lowest (~0.45) at bin boundaries.
 
-    NOTE (REVIEW-ml-dev.md, Important Fix #4): out-of-range values below currently
-    CLAMP to the nearest extreme score (1 or 9) at confidence 0.3, rather than
-    refusing to score. The review flags this as a problem: a garbage measurement
-    should produce not_scored_reason, not a confident-looking extreme score,
-    since "refusing to score" is a pitch differentiator for this project. This
-    function is left unchanged in this pass (it's part of the trait-rename fix,
-    not the clamping fix) - fixing the clamp-vs-refuse behavior is a separate,
-    still-open task.
+    NOTE (REVIEW-ml-dev.md, Important Fix #4, resolved): out-of-range values used
+    to CLAMP to the nearest extreme score (1 or 9) at confidence 0.3, producing a
+    confident-looking score from a garbage measurement. Now returns (None, 0.0)
+    instead, so the caller (score_trait) can refuse to score the trait - matching
+    the "refusing to score is a feature" pitch point and the contract's
+    not_scored_reason mechanism.
     """
     if species not in SPECIES_RULES:
         raise KeyError(f"Unknown species: {species!r}")
@@ -152,8 +148,7 @@ def score_from_value(trait_id: str, species: str, value: float) -> Tuple[int, fl
     bins = rule["bins"]
 
     if value < rule["min"] or value > rule["max"]:
-        score = bins[0][2] if value < rule["min"] else bins[-1][2]
-        return (score, 0.3)
+        return (None, 0.0)
 
     for lo, hi, score in bins:
         if lo <= value <= hi:

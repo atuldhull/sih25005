@@ -184,7 +184,16 @@ def to_contract_dict(
                         else (
                             "; ".join(measurement.flags)
                             if measurement and measurement.flags
-                            else "required keypoints not available"
+                            else (
+                                # REVIEW-ml-dev.md, Important Fix #4: a measurement
+                                # was successfully computed (has a value, no flags)
+                                # but fell outside the trait's calibrated range, so
+                                # score_trait() refused to score it - distinct from
+                                # the missing-keypoints case below.
+                                "measured value outside calibrated range for this trait"
+                                if measurement and measurement.value is not None
+                                else "required keypoints not available"
+                            )
                         )
                     ),
                 }

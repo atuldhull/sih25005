@@ -7,18 +7,22 @@ from ml.config.rules import score_from_value, SPECIES_RULES
 
 VALID_SPECIES = tuple(SPECIES_RULES)
 
-
 def score_trait(measurement: MeasurementResult, species: str) -> ScoreResult:
     """Score a single trait measurement into a 1-9 ScoreResult.
 
     Unmeasurable traits (value is None) return score_1_9=None with zero confidence.
-    Otherwise confidence combines the measurement's quality with the rule lookup's
-    bin confidence.
+    A measured value outside the trait's calibrated range also returns
+    score_1_9=None (REVIEW-ml-dev.md, Important Fix #4: refuse instead of
+    clamping to a confident-looking extreme score). Otherwise confidence
+    combines the measurement's quality with the rule lookup's bin confidence.
     """
     if measurement.value is None:
         return ScoreResult(trait_id=measurement.trait_id, score_1_9=None, confidence=0.0)
 
     score, rule_confidence = score_from_value(measurement.trait_id, species, measurement.value)
+    if score is None:
+        return ScoreResult(trait_id=measurement.trait_id, score_1_9=None, confidence=0.0)
+
     return ScoreResult(
         trait_id=measurement.trait_id,
         score_1_9=score,
