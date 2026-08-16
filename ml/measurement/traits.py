@@ -61,15 +61,16 @@ def _compute_angle(points: List[Keypoint]) -> Optional[float]:
         cos_theta = max(-1.0, min(1.0, cos_theta))
         return math.degrees(math.acos(cos_theta))
     if len(pts) == 2:
-        raw_angle = math.degrees(math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0]))
-        # Fold into (-90, 90]: a line's orientation is direction-agnostic, so
-        # atan2 can return an angle 180 degrees away for the same physical
-        # slope depending on point/facing order (e.g. 5.7 vs 174.3 degrees).
-        if raw_angle > 90.0:
-            raw_angle -= 180.0
-        elif raw_angle <= -90.0:
-            raw_angle += 180.0
-        return raw_angle
+        # dx flips sign under a horizontal image mirror; dy (the physical
+        # height relationship between the two points) does not. Using
+        # abs(dx) keeps the result mirror-invariant instead of flipping
+        # from +theta to (180-theta) when the same geometry is mirrored.
+        dx = pts[1][0] - pts[0][0]
+        dy = pts[1][1] - pts[0][1]
+        return math.degrees(math.atan2(dy, abs(dx)))
+    return None
+
+
 def _compute_leg_set_angle(points: List[Keypoint]) -> Optional[float]:
     """Per-leg deviation from vertical, averaged left/right, for leg-set traits.
 
@@ -90,6 +91,8 @@ def _compute_leg_set_angle(points: List[Keypoint]) -> Optional[float]:
     left_dev = math.degrees(math.atan2(hock_left[0] - hip_left[0], hock_left[1] - hip_left[1]))
     right_dev = math.degrees(math.atan2(hock_right[0] - hip_right[0], hock_right[1] - hip_right[1]))
     return (left_dev - right_dev) / 2.0
+
+
 def _compute_ratio(points: List[Keypoint]) -> Optional[float]:
     """Ratio of the distance between the first point-pair to the second point-pair."""
     if len(points) < 4:
