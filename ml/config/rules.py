@@ -24,10 +24,11 @@ def _bins(min_v: float, max_v: float, reverse: bool = False) -> List[Tuple[float
 SPECIES_RULES = {
     "cattle": {
         # ---------------- Class A: angles (degrees) ----------------
-        # NOTE (REVIEW-ml-dev.md, minor fix): reverse=True here may invert the
-        # correct ICAR direction convention. Flagged, not changed in this pass -
-        # confirm against ICAR reference before removing reverse=True.
-        "rump_angle": {"min": 0.0, "max": 15.0, "bins": _bins(0.0, 15.0, reverse=True)},
+        # NOTE (REVIEW-ml-dev.md, minor fix, resolved): confirmed against ICAR/
+        # Nordic conformation-recording reference - low pins (high angle) score
+        # higher, high pins (low/negative angle) score 1. reverse=True was
+        # inverting this. Removed (default ascending mapping is correct).
+        "rump_angle": {"min": 0.0, "max": 15.0, "bins": _bins(0.0, 15.0)},
         "hock_angle": {"min": 130.0, "max": 160.0, "bins": _bins(130.0, 160.0)},
         # RENAMED from pastern_angle -> foot_angle to match contract trait name.
         "foot_angle": {"min": 40.0, "max": 65.0, "bins": _bins(40.0, 65.0)},
@@ -82,7 +83,10 @@ SPECIES_RULES = {
     },
     "buffalo": {
         # ---------------- Class A: angles (degrees) ----------------
-        "rump_angle": {"min": 0.0, "max": 16.0, "bins": _bins(0.0, 16.0, reverse=True)},
+       # NOTE (REVIEW-ml-dev.md, minor fix, resolved): same ICAR-direction fix
+        # as the cattle rump_angle entry above - reverse=True was inverting the
+        # correct ascending mapping (low pins/high angle = higher score).
+        "rump_angle": {"min": 0.0, "max": 16.0, "bins": _bins(0.0, 16.0)},
         "hock_angle": {"min": 132.0, "max": 162.0, "bins": _bins(132.0, 162.0)},
         "foot_angle": {"min": 42.0, "max": 67.0, "bins": _bins(42.0, 67.0)},
         "rear_legs_set": {"min": -10.0, "max": 10.0, "bins": _bins(-10.0, 10.0)},
