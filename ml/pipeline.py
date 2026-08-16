@@ -12,7 +12,7 @@ from ml.explainability.explainer import assemble_explainability
 from ml.explainability.result_builder import build_scoring_result, to_contract_dict
 from ml.ingestion.quality_validation import validate_image, validate_video
 from ml.measurement.traits import measure_all_traits
-from ml.scoring.scorer import check_eligibility, determine_status, score_all_traits
+from ml.scoring.scorer import scoreability, determine_status, score_all_traits
 from ml.weight.estimator import estimate_weight
 
 KEYPOINT_CONFIDENCE_MIN = 0.3
@@ -112,7 +112,7 @@ def score_animal(
         scale_confidence,
     )
     scores = score_all_traits(measurements, species)
-    eligibility = check_eligibility(measurements, species, quality_passed=quality_passed)
+    eligibility = scoreability(measurements, species, quality_passed=quality_passed)
     status = determine_status(eligibility, measurements)
     explainability = assemble_explainability(measurements, scores, keypoints)
     weight_result = estimate_weight(measurements)
@@ -158,7 +158,7 @@ def _build_not_scored(
     top-level status/warnings field for pipeline mode, so this is the only
     honest place to surface why nothing could be measured.
     """
-    eligibility = check_eligibility(
+    eligibility = scoreability(
         measurements=[],
         species=species,
         quality_passed=quality_passed,

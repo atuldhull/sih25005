@@ -1,4 +1,4 @@
-﻿"""Temporary scratch test: measurement -> scoring -> to_contract_dict() -> validate().
+"""Temporary scratch test: measurement -> scoring -> to_contract_dict() -> validate().
 
 Run from inside the ml/ folder (same convention as test_full_pipeline.py):
     cd ml
@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "contract"))
 from validate_result import validate  # noqa: E402
 
 from ml.measurement.traits import measure_all_traits
-from ml.scoring.scorer import check_eligibility, determine_status, score_all_traits
+from ml.scoring.scorer import scoreability, determine_status, score_all_traits
 from ml.explainability.result_builder import build_scoring_result, to_contract_dict
 from ml.weight.estimator import estimate_weight
 from ml.config.traits import TRAIT_REGISTRY
@@ -58,7 +58,7 @@ print(f"keypoints provided: {len(keypoints)} | missing from registry: {len(missi
 
 measurements = measure_all_traits(keypoints, SCALE_FACTOR, SPECIES, SCALE_CONFIDENCE)
 scores = score_all_traits(measurements, SPECIES)
-eligibility = check_eligibility(measurements, SPECIES, quality_passed=True)
+eligibility = scoreability(measurements, SPECIES, quality_passed=True)
 status = determine_status(eligibility, measurements)
 weight_result = estimate_weight(measurements)
 print(

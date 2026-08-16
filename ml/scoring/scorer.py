@@ -31,7 +31,7 @@ def score_all_traits(measurements: List[MeasurementResult], species: str) -> Lis
     return [score_trait(m, species) for m in measurements]
 
 
-def check_eligibility(
+def scoreability(
     measurements: List[MeasurementResult],
     species: str,
     quality_passed: bool,
