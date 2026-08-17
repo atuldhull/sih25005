@@ -40,6 +40,16 @@
     "error_422": { "detail": "animal not eligible: not in first lactation (currently lactation 2)" }
   },
 
+  "GET /session/{session_id}": {
+    "purpose": "full stored scorecard for one past session (for 'open old session' screens and the demo console)",
+    "response": "the stored session document: session_id, animal_id, date, weight_kg_mid, health_flags, result (full scoring_result object). Internal fields (_id, file paths) are stripped",
+    "error_404": { "detail": "unknown session" }
+  },
+
+  "GET /demo": {
+    "purpose": "judge-facing scoring console web page: run sessions, browse scorecards with overlay proof, weight trends, vet officer alert feed - a complete demo without the mobile app"
+  },
+
   "GET /animal/{animal_id}/history": {
     "purpose": "past sessions for trends",
     "response": {

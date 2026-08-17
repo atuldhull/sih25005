@@ -159,6 +159,15 @@ def chat_ui():
                         media_type="text/html")
 
 
+@app.get("/demo")
+def demo_console():
+    """Judge-facing scoring console: run sessions, browse scorecards
+    with overlay proof, weight trends, and the vet officer's alert
+    feed - a complete demo without the mobile app."""
+    return FileResponse(Path(__file__).parent / "static" / "demo.html",
+                        media_type="text/html")
+
+
 @app.get("/animal/{animal_id}")
 def get_animal(animal_id: str):
     animal = db.animals.find_one({"_id": animal_id})
@@ -441,6 +450,17 @@ def get_alerts():
     dashboard - in the demo it's this endpoint + a screen in the app."""
     return {"alerts": list(db.vet_alerts.find({}, {"_id": 0})
                            .sort("date", -1).limit(20))}
+
+
+@app.get("/session/{session_id}")
+def get_session(session_id: str):
+    """Full stored scorecard for one session - powers the demo
+    dashboard and any 'open old session' screen in the app."""
+    s = db.sessions.find_one({"session_id": session_id}, {"_id": 0,
+                                                          "files": 0})
+    if s is None:
+        raise HTTPException(status_code=404, detail="unknown session")
+    return s
 
 
 @app.get("/animal/{animal_id}/history")

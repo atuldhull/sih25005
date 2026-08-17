@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pashu Mitra · Scoring Console</title>
+<style>
+  :root {
+    --navy: #1F4E79; --navy-d: #16395a; --steel: #44546a;
+    --line: #dbe4ee; --bg: #f5f7fa; --card: #ffffff; --ink: #202830;
+    --green: #17703f; --green-bg: #e9f6ee; --amber: #b45309;
+    --amber-bg: #fff7e8; --red: #b91c1c; --red-bg: #fdecec;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Segoe UI", system-ui, "Noto Sans Devanagari", sans-serif;
+         background: var(--bg); color: var(--ink); min-height: 100vh; }
+  header { background: linear-gradient(135deg, var(--navy-d), var(--navy));
+           color: #fff; padding: 13px 22px; display: flex; gap: 14px;
+           align-items: center; }
+  .mark { width: 38px; height: 38px; border-radius: 9px; background: #ffffff1c;
+          border: 1px solid #ffffff38; display: grid; place-items: center;
+          font-size: 19px; font-weight: 700; }
+  .h-title { font-size: 16.5px; font-weight: 650; }
+  .h-sub { font-size: 11.5px; opacity: .8; }
+  .spacer { flex: 1; }
+  header a { color: #fff; font-size: 12.5px; opacity: .85;
+             text-decoration: none; border: 1px solid #ffffff40;
+             padding: 6px 12px; border-radius: 999px; }
+  main { max-width: 1080px; margin: 0 auto; padding: 16px; }
+
+  .bar { background: var(--card); border: 1px solid var(--line);
+         border-radius: 12px; padding: 10px 14px; display: flex; gap: 10px;
+         align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .bar label { font-size: 12px; font-weight: 700; color: var(--steel);
+               text-transform: uppercase; letter-spacing: .5px; }
+  select, input[type=file] { border: 1px solid var(--line); border-radius: 8px;
+         padding: 8px 10px; font-size: 13.5px; font-family: inherit;
+         background: #fff; }
+  select { min-width: 260px; }
+  .badge { font-size: 11.5px; font-weight: 700; padding: 4px 11px;
+           border-radius: 999px; }
+  .badge.ok { background: var(--green-bg); color: var(--green); }
+  .badge.no { background: var(--amber-bg); color: var(--amber); }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tab { border: 1px solid var(--line); background: var(--card);
+         padding: 9px 18px; border-radius: 999px; font-size: 13.5px;
+         font-weight: 600; color: var(--steel); cursor: pointer; }
+  .tab.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .panel { display: none; }
+  .panel.on { display: block; }
+
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .card h3 { font-size: 14px; color: var(--navy); margin-bottom: 10px; }
+  .muted { color: var(--steel); font-size: 12.5px; }
+  button.go { background: var(--navy); color: #fff; border: none;
+              border-radius: 9px; padding: 10px 22px; font-size: 14px;
+              font-weight: 650; cursor: pointer; }
+  button.go:disabled { opacity: .55; }
+
+  .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .stat { background: var(--card); border: 1px solid var(--line);
+          border-radius: 12px; padding: 12px 18px; min-width: 150px; }
+  .stat .v { font-size: 20px; font-weight: 750; color: var(--navy); }
+  .stat .k { font-size: 11px; color: var(--steel); text-transform: uppercase;
+             letter-spacing: .5px; margin-top: 2px; }
+
+  .cat { margin-bottom: 4px; }
+  .cat h4 { font-size: 12px; color: var(--steel); text-transform: uppercase;
+            letter-spacing: .6px; margin: 12px 0 6px; }
+  .trow { display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+          border-radius: 9px; cursor: pointer; }
+  .trow:hover { background: var(--bg); }
+  .tname { flex: 0 0 200px; font-size: 13.5px; }
+  .tscore { flex: 0 0 34px; height: 26px; border-radius: 7px;
+            background: var(--navy); color: #fff; font-weight: 750;
+            font-size: 13.5px; display: grid; place-items: center; }
+  .tscore.na { background: #e5e9f0; color: var(--steel); font-size: 11px; }
+  .cbar { flex: 1; height: 7px; background: #edf1f6; border-radius: 999px;
+          overflow: hidden; max-width: 220px; }
+  .cbar i { display: block; height: 100%; background: var(--navy);
+            border-radius: 999px; }
+  .tmeas { flex: 1; font-size: 12px; color: var(--steel); }
+
+  .risk { border-left: 4px solid var(--amber); background: var(--amber-bg);
+          border-radius: 8px; padding: 9px 12px; margin-bottom: 7px;
+          font-size: 13px; }
+  .risk.high { border-left-color: var(--red); background: var(--red-bg); }
+  .reportbox { background: var(--bg); border-radius: 9px; padding: 11px 13px;
+               font-size: 12.5px; white-space: pre-wrap; margin-top: 8px; }
+
+  .hrow { display: flex; gap: 10px; align-items: center; padding: 9px 10px;
+          border-radius: 9px; cursor: pointer; font-size: 13.5px; }
+  .hrow:hover { background: var(--bg); }
+  .alert-card { border: 1px solid var(--line); border-left: 5px solid
+                var(--red); border-radius: 10px; padding: 12px 14px;
+                margin-bottom: 10px; background: var(--card); }
+  .alert-card b { color: var(--red); }
+
+  #overlayModal { display: none; position: fixed; inset: 0;
+                  background: #10141adb; z-index: 50; padding: 4vh 4vw; }
+  #overlayModal.on { display: grid; place-items: center; }
+  #overlayModal .inner { background: #fff; border-radius: 14px; padding: 16px;
+                         max-width: min(760px, 92vw); max-height: 90vh;
+                         overflow: auto; }
+  #overlayModal img { max-width: 100%; border-radius: 9px; }
+  .sys { text-align: center; color: var(--steel); font-size: 12.5px;
+         padding: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="mark">पम</div>
+  <div>
+    <div class="h-title">Pashu Mitra — Scoring Console</div>
+    <div class="h-sub">Field demo · Animal Type Classification · SIH260486</div>
+  </div>
+  <div class="spacer"></div>
+  <a href="/chat-ui">Assistant ↗</a>
+</header>
+
+<main>
+  <div class="bar">
+    <label>Animal</label>
+    <select id="animal"></select>
+    <span class="badge" id="eligBadge" hidden></span>
+  </div>
+
+  <div class="tabs">
+    <div class="tab on" data-p="score">New session</div>
+    <div class="tab" data-p="history">History & trend</div>
+    <div class="tab" data-p="alerts">Vet officer alerts</div>
+  </div>
+
+  <!-- ============ NEW SESSION ============ -->
+  <div class="panel on" id="p-score">
+    <div class="card">
+      <h3>Score this animal</h3>
+      <div class="muted" style="margin-bottom:10px">Side photo + rear photo
+        (+ optional 8-s walking video). The server refuses ineligible
+        animals — that's a feature.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <input type="file" id="fSide" accept="image/*">
+        <input type="file" id="fRear" accept="image/*">
+        <input type="file" id="fVid" accept="video/*">
+        <button class="go" id="goScore">Score animal</button>
+      </div>
+      <div class="sys" id="scoreMsg" hidden></div>
+    </div>
+    <div id="scorecard"></div>
+  </div>
+
+  <!-- ============ HISTORY ============ -->
+  <div class="panel" id="p-history">
+    <div class="card">
+      <h3>Sessions & weight trend</h3>
+      <div id="histList" class="muted">Select an animal.</div>
+    </div>
+    <div id="histCard"></div>
+  </div>
+
+  <!-- ============ ALERTS ============ -->
+  <div class="panel" id="p-alerts">
+    <div class="card">
+      <h3>Escalated screenings — newest first</h3>
+      <div class="muted" style="margin-bottom:10px">What the block
+        veterinary officer would see. Outbreak = same sign, same village,
+        3+ animals in 14 days.</div>
+      <div id="alertList">Loading…</div>
+    </div>
+  </div>
+</main>
+
+<div id="overlayModal"><div class="inner" id="overlayInner"></div></div>
+
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const sel = $("animal");
+  const CATS = ["Dairy Strength", "Rump", "Feet & Legs", "Udder", "General"];
+  let currentSession = null;
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function fetchT(url, opts, ms) {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), ms || 90000);
+    return fetch(url, Object.assign({}, opts, { signal: c.signal }))
+      .finally(() => clearTimeout(t));
+  }
+
+  /* ---------- animals ---------- */
+  async function loadAnimals() {
+    try {
+      const r = await fetchT("/animals");
+      const list = (await r.json()).animals;
+      sel.innerHTML = "";
+      list.forEach(a => {
+        const o = document.createElement("option");
+        o.value = a.animal_id;
+        o.textContent = `${a.breed} ${a.species === "buffalo" ? "🐃" : "🐄"} · ${a.animal_id} · ${a.village}`;
+        o.dataset.eligible = a.eligible;
+        sel.appendChild(o);
+      });
+      updateBadge(); loadHistory();
+    } catch { $("histList").textContent = "Server unreachable."; }
+  }
+  function updateBadge() {
+    const o = sel.selectedOptions[0], b = $("eligBadge");
+    if (!o) { b.hidden = true; return; }
+    const ok = o.dataset.eligible === "true";
+    b.hidden = false; b.className = "badge " + (ok ? "ok" : "no");
+    b.textContent = ok ? "Eligible for scoring" : "Not eligible now";
+  }
+  sel.addEventListener("change", () => { updateBadge(); loadHistory();
+    $("scorecard").innerHTML = ""; $("histCard").innerHTML = ""; });
+
+  /* ---------- tabs ---------- */
+  document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("on"));
+    document.querySelectorAll(".panel").forEach(x => x.classList.remove("on"));
+    t.classList.add("on"); $("p-" + t.dataset.p).classList.add("on");
+    if (t.dataset.p === "alerts") loadAlerts();
+    if (t.dataset.p === "history") loadHistory();
+  }));
+
+  /* ---------- scorecard rendering ---------- */
+  function renderScorecard(target, res) {
+    currentSession = res.session_id;
+    target.innerHTML = "";
+
+    const sum = el("div", "summary");
+    const w = res.weight_kg || {};
+    const wtxt = (typeof w.low === "number" && typeof w.high === "number")
+      ? `${w.low}–${w.high} kg` : "not measured";
+    const scored = (res.traits || []).filter(t => t.score !== null).length;
+    [[wtxt, "estimated weight"],
+     [`${scored}/20`, "traits scored"],
+     [res.eligible ? "Eligible" : "Refused", res.eligible_reason || ""],
+     [res.engine && res.engine.startsWith("ml") ? "ML pipeline" : "Baseline",
+      "scoring engine"]].forEach(([v, k]) => {
+      const s = el("div", "stat");
+      s.appendChild(el("div", "v", v)); s.appendChild(el("div", "k", k));
+      sum.appendChild(s);
+    });
+    target.appendChild(sum);
+
+    if (res.escalated) {
+      const rc = el("div", "risk high",
+        "ESCALATED — this screening was sent to the veterinary officer's feed.");
+      target.appendChild(rc);
+    }
+    (res.risk_report || []).forEach(r => {
+      const d = el("div", "risk" + (r.risk === "high" ? " high" : ""),
+        `${r.label} — ${r.risk} risk (${r.action}). Based on: ${(r.because_of || []).join(", ")}`);
+      target.appendChild(d);
+    });
+
+    const card = el("div", "card");
+    card.appendChild(el("h3", null,
+      "NDDB scorecard — tap a trait to see its measured proof"));
+    card.appendChild(el("div", "muted",
+      "1 and 9 are biological extremes, not bad/good — scores are never colour-graded."));
+    CATS.forEach(cat => {
+      const traits = (res.traits || []).filter(t => t.category === cat);
+      if (!traits.length) return;
+      const cd = el("div", "cat");
+      cd.appendChild(el("h4", null, `${cat} (${traits.length})`));
+      traits.forEach(t => {
+        const row = el("div", "trow");
+        row.appendChild(el("div", "tname", t.name));
+        const sc = el("div", "tscore" + (t.score === null ? " na" : ""),
+                      t.score === null ? "—" : String(t.score));
+        row.appendChild(sc);
+        const cb = el("div", "cbar");
+        const fill = el("i");
+        fill.style.width = Math.round((t.confidence || 0) * 100) + "%";
+        cb.appendChild(fill); row.appendChild(cb);
+        row.appendChild(el("div", "tmeas", t.score === null
+          ? (t.not_scored_reason || "not scored")
+          : (t.measured_value || t.explanation || "")));
+        row.addEventListener("click", () => showOverlay(t));
+        cd.appendChild(row);
+      });
+      card.appendChild(cd);
+    });
+    target.appendChild(card);
+
+    if (res.reports && (res.reports.farmer || res.reports.vet)) {
+      const rep = el("div", "card");
+      rep.appendChild(el("h3", null, "Generated reports"));
+      if (res.reports.farmer) {
+        rep.appendChild(el("div", "muted", "For the farmer:"));
+        rep.appendChild(el("div", "reportbox", res.reports.farmer));
+      }
+      if (res.reports.vet) {
+        rep.appendChild(el("div", "muted", "For the veterinary officer:"));
+        rep.appendChild(el("div", "reportbox", res.reports.vet));
+      }
+      target.appendChild(rep);
+    }
+  }
+
+  function showOverlay(t) {
+    const inner = $("overlayInner");
+    inner.innerHTML = "";
+    inner.appendChild(el("h3", null, `${t.name} — ` +
+      (t.score === null ? "not scored" : `score ${t.score}`)));
+    inner.appendChild(el("div", "muted",
+      [t.measured_value, t.ci ? `CI ${t.ci}` : "",
+       `confidence ${(t.confidence ?? 0).toFixed(2)}`]
+        .filter(Boolean).join("  ·  ")));
+    if (t.explanation) inner.appendChild(el("p", "muted", t.explanation));
+    if (t.not_scored_reason) inner.appendChild(el("p", "muted",
+      t.not_scored_reason));
+    if (t.score !== null && currentSession) {
+      const img = document.createElement("img");
+      img.src = `/overlays/${currentSession}/${t.name.replace(/ /g, "_")}.jpg`;
+      img.alt = "measurement overlay";
+      img.onerror = () => img.replaceWith(
+        el("p", "muted", "Overlay unavailable for this session."));
+      inner.appendChild(img);
+    }
+    $("overlayModal").classList.add("on");
+  }
+  $("overlayModal").addEventListener("click", e => {
+    if (e.target === $("overlayModal"))
+      $("overlayModal").classList.remove("on");
+  });
+
+  /* ---------- new session ---------- */
+  $("goScore").addEventListener("click", async () => {
+    const side = $("fSide").files[0], rear = $("fRear").files[0];
+    const msg = $("scoreMsg");
+    if (!side || !rear) {
+      msg.hidden = false; msg.textContent = "Side and rear photos are required.";
+      return;
+    }
+    const fd = new FormData();
+    fd.append("animal_id", sel.value);
+    fd.append("device_session_id",
+              "console-" + Math.random().toString(36).slice(2, 10));
+    fd.append("side_photo", side);
+    fd.append("rear_photo", rear);
+    if ($("fVid").files[0]) fd.append("gait_video", $("fVid").files[0]);
+    $("goScore").disabled = true;
+    msg.hidden = false; msg.textContent = "Scoring…";
+    try {
+      const r = await fetchT("/session", { method: "POST", body: fd }, 120000);
+      const data = await r.json();
+      if (!r.ok) { msg.textContent = data.detail || "Refused."; return; }
+      msg.hidden = true;
+      renderScorecard($("scorecard"), data);
+    } catch { msg.textContent = "Connection problem — try again."; }
+    finally { $("goScore").disabled = false; }
+  });
+
+  /* ---------- history ---------- */
+  async function loadHistory() {
+    if (!sel.value) return;
+    const box = $("histList");
+    try {
+      const r = await fetchT(`/animal/${sel.value}/history`);
+      const sessions = (await r.json()).sessions || [];
+      box.innerHTML = "";
+      if (!sessions.length) { box.textContent = "No sessions yet."; return; }
+      const weights = sessions.filter(s => s.weight_kg_mid != null);
+      if (weights.length >= 2) {
+        const newest = weights[0].weight_kg_mid,
+              oldest = weights[weights.length - 1].weight_kg_mid;
+        const dir = newest > oldest ? "▲ rising" :
+                    newest < oldest ? "▼ falling" : "stable";
+        box.appendChild(el("div", "risk",
+          `Weight trend: ${oldest} kg → ${newest} kg  (${dir})`));
+      }
+      sessions.forEach(s => {
+        const row = el("div", "hrow");
+        row.appendChild(el("div", null, `📋 ${s.date}`));
+        row.appendChild(el("div", "muted",
+          s.weight_kg_mid != null ? `${s.weight_kg_mid} kg` : "no weight"));
+        if ((s.health_flags || []).length)
+          row.appendChild(el("div", "badge no", s.health_flags.join(", ")));
+        row.addEventListener("click", async () => {
+          const rr = await fetchT(`/session/${s.session_id}`);
+          if (rr.ok) {
+            const doc = await rr.json();
+            renderScorecard($("histCard"), doc.result);
+          }
+        });
+        box.appendChild(row);
+      });
+    } catch { box.textContent = "Could not load history."; }
+  }
+
+  /* ---------- alerts ---------- */
+  async function loadAlerts() {
+    const box = $("alertList");
+    try {
+      const r = await fetchT("/alerts");
+      const alerts = (await r.json()).alerts || [];
+      box.innerHTML = "";
+      if (!alerts.length) { box.textContent = "No escalations yet."; return; }
+      alerts.forEach(a => {
+        const c = el("div", "alert-card");
+        const head = el("div");
+        head.appendChild(el("b", null,
+          (a.top_risks || []).join(", ") || "escalation"));
+        head.appendChild(el("span", "muted",
+          `  — animal …${(a.animal_id || "").slice(-4)} · ${a.village} · ${a.date}`));
+        c.appendChild(head);
+        (a.herd_alerts || []).forEach(h => c.appendChild(el("div", "risk high",
+          `OUTBREAK SIGNAL: ${h.animals_affected_14d} animals in ${h.village} — ${h.symptom}`)));
+        if (a.report_vet) c.appendChild(el("div", "reportbox", a.report_vet));
+        box.appendChild(c);
+      });
+    } catch { box.textContent = "Could not load alerts."; }
+  }
+
+  loadAnimals();
+})();
+</script>
+</body>
+</html>
