@@ -57,11 +57,16 @@ def needs_escalation(risks: list[dict]) -> bool:
                (r["urgency"] == "high" and r["risk"] != "low") for r in risks)
 
 
-def herd_symptom_count(db, village: str, symptom: str, days: int = 14) -> int:
+def herd_symptom_count(db, village: str, symptom: str, days: int = 14,
+                       exclude_animal: str | None = None) -> int:
     """How many DISTINCT animals in this village showed this symptom
     in recent sessions. >= OUTBREAK_MIN_ANIMALS (incl. the current
-    one) reads as an outbreak signal worth escalating."""
-    village_ids = [a["_id"] for a in db.animals.find({"village": village}, {"_id": 1})]
+    one) reads as an outbreak signal worth escalating.
+    exclude_animal: leave the animal being scored NOW out of the count
+    so the caller can add it back as +1 without double-counting a
+    re-scan of the same animal."""
+    village_ids = [a["_id"] for a in db.animals.find({"village": village}, {"_id": 1})
+                   if a["_id"] != exclude_animal]
     since = (date.today() - timedelta(days=days)).isoformat()
     return len(db.sessions.distinct("animal_id", {
         "animal_id": {"$in": village_ids},

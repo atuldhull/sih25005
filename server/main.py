@@ -219,10 +219,20 @@ def create_session(
     session_dir = UPLOAD_DIR / device_session_id
     session_dir.mkdir(parents=True, exist_ok=True)
     saved = {}
+    # size caps: one oversized upload must not fill the demo laptop's disk
+    caps = {"side.jpg": 10 * 1024 * 1024, "rear.jpg": 10 * 1024 * 1024,
+            "gait.mp4": 25 * 1024 * 1024}
     for filename, upload in [("side.jpg", side_photo), ("rear.jpg", rear_photo),
                              ("gait.mp4", gait_video)]:
         if upload is not None:
-            (session_dir / filename).write_bytes(upload.file.read())
+            data = upload.file.read(caps[filename] + 1)
+            if len(data) > caps[filename]:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"{filename.split('.')[0]} file too large - max "
+                           f"{caps[filename] // (1024 * 1024)} MB. Use a "
+                           "smaller photo / record a shorter clip (~8 s).")
+            (session_dir / filename).write_bytes(data)
             saved[filename] = str(session_dir / filename)
 
     result = score_animal(saved.get("side.jpg"), saved.get("rear.jpg"),
@@ -242,7 +252,8 @@ def create_session(
 
     herd_alerts = []
     for s in result["symptom_vector"]:
-        others = vkg.herd_symptom_count(db, animal["village"], s["symptom"])
+        others = vkg.herd_symptom_count(db, animal["village"], s["symptom"],
+                                        exclude_animal=animal_id)
         if others + 1 >= vkg.OUTBREAK_MIN_ANIMALS:
             herd_alerts.append({"symptom": s["symptom"],
                                 "village": animal["village"],
@@ -252,14 +263,19 @@ def create_session(
                                               result["symptom_vector"], herd_alerts)
     result["escalated"] = vkg.needs_escalation(risks) or bool(herd_alerts)
     if result["escalated"]:
-        db.vet_alerts.insert_one({
+        # upsert by session_id: a retried upload refreshes its own alert
+        # instead of stacking duplicates in the officer's feed; store the
+        # human label, not the internal condition id
+        db.vet_alerts.replace_one({"session_id": device_session_id}, {
+            "session_id": device_session_id,
             "animal_id": animal_id,
             "village": animal["village"],
             "date": date.today().isoformat(),
-            "top_risks": [r["condition"] for r in risks[:3]],
+            "top_risks": [r.get("label") or r["condition"]
+                          for r in risks[:3]],
             "herd_alerts": list(herd_alerts),
             "report_vet": result["reports"]["vet"],
-        })
+        }, upsert=True)
 
     weight = result.get("weight_kg")
     weight_mid = None
@@ -449,7 +465,7 @@ def get_alerts():
     newest first. In production this would push to the officer's BPA
     dashboard - in the demo it's this endpoint + a screen in the app."""
     return {"alerts": list(db.vet_alerts.find({}, {"_id": 0})
-                           .sort("date", -1).limit(20))}
+                           .sort([("date", -1), ("_id", -1)]).limit(20))}
 
 
 @app.get("/session/{session_id}")

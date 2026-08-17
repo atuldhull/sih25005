@@ -83,7 +83,12 @@ def score_animal(side_photo_path, rear_photo_path, gait_video_path, animal_recor
         })
 
     weight_mid = rng.randint(360, 430)
-    limping = gait_video_path is not None and rng.random() < 0.3
+    # deterministic symptom roll by tag number so demos are plannable:
+    # id % 5 == 1 -> visible skin nodules; == 2 -> limping (needs video)
+    tag = str(animal_record["_id"])
+    mod = int(tag) % 5 if tag.isdigit() else 0
+    nodules = mod == 1
+    limping = mod == 2 and gait_video_path is not None
 
     return {
         "session_id": None,  # filled by the server
@@ -103,13 +108,15 @@ def score_animal(side_photo_path, rear_photo_path, gait_video_path, animal_recor
         "weight_kg": {"low": weight_mid - 14, "high": weight_mid + 14,
                       "method": "girth-length-regression",
                       "cross_check": f"smal-volume: {weight_mid + rng.randint(-8, 8)}"},
-        "symptom_vector": ([{"symptom": "gait_asymmetry",
-                             "confidence": round(rng.uniform(0.6, 0.85), 2),
-                             "region": "legs", "source": "video"}] if limping else []),
-        "risk_report": ([{"condition": "lameness (hoof origin)", "risk": "medium",
-                          "because_of": ["gait_asymmetry"],
-                          "action": "refer to vet"}] if limping else []),
-        "health_flags": (["locomotion_abnormal"] if limping else []),
+        "symptom_vector": (
+            [{"symptom": "skin_nodules", "confidence": 0.82,
+              "region": "skin", "source": "photo"}] if nodules else
+            [{"symptom": "gait_asymmetry",
+              "confidence": round(rng.uniform(0.6, 0.85), 2),
+              "region": "legs", "source": "video"}] if limping else []),
+        "risk_report": [],  # the server's knowledge graph fills this
+        "health_flags": (["visible_abnormality"] if nodules else
+                         ["locomotion_abnormal"] if limping else []),
         "captured_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "synced": True,
     }

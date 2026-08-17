@@ -70,9 +70,14 @@
   .cat h4 { font-size: 12px; color: var(--steel); text-transform: uppercase;
             letter-spacing: .6px; margin: 12px 0 6px; }
   .trow { display: flex; align-items: center; gap: 10px; padding: 7px 10px;
-          border-radius: 9px; cursor: pointer; }
+          border-radius: 9px; cursor: pointer; flex-wrap: wrap; }
   .trow:hover { background: var(--bg); }
   .tname { flex: 0 0 200px; font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .tname { flex: 1 1 calc(100% - 110px); }
+    .cbar { max-width: none; }
+    .tmeas { flex: 1 1 100%; padding-left: 2px; }
+  }
   .tscore { flex: 0 0 34px; height: 26px; border-radius: 7px;
             background: var(--navy); color: #fff; font-weight: 750;
             font-size: 13.5px; display: grid; place-items: center; }
@@ -181,7 +186,11 @@
   const $ = id => document.getElementById(id);
   const sel = $("animal");
   const CATS = ["Dairy Strength", "Rump", "Feet & Legs", "Udder", "General"];
-  let currentSession = null;
+  // one upload attempt = one id; a RETRY of the same files reuses it so
+  // the server's idempotency (same device_session_id) actually engages
+  let attemptId = null;
+  ["fSide", "fRear", "fVid"].forEach(id =>
+    $(id).addEventListener("change", () => { attemptId = null; }));
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -233,7 +242,9 @@
 
   /* ---------- scorecard rendering ---------- */
   function renderScorecard(target, res) {
-    currentSession = res.session_id;
+    // bind the session id HERE: the new-session card and a history card
+    // can be on screen at once, and each row must open ITS OWN overlay
+    const sid = res.session_id;
     target.innerHTML = "";
 
     const sum = el("div", "summary");
@@ -257,6 +268,9 @@
         "ESCALATED — this screening was sent to the veterinary officer's feed.");
       target.appendChild(rc);
     }
+    (res.herd_alerts || []).forEach(h => target.appendChild(el("div", "risk high",
+      `OUTBREAK SIGNAL: ${h.animals_affected_14d} animals in ${h.village} ` +
+      `showed "${h.symptom}" within 14 days — village-level alert raised.`)));
     (res.risk_report || []).forEach(r => {
       const d = el("div", "risk" + (r.risk === "high" ? " high" : ""),
         `${r.label} — ${r.risk} risk (${r.action}). Based on: ${(r.because_of || []).join(", ")}`);
@@ -286,7 +300,7 @@
         row.appendChild(el("div", "tmeas", t.score === null
           ? (t.not_scored_reason || "not scored")
           : (t.measured_value || t.explanation || "")));
-        row.addEventListener("click", () => showOverlay(t));
+        row.addEventListener("click", () => showOverlay(t, sid));
         cd.appendChild(row);
       });
       card.appendChild(cd);
@@ -308,7 +322,7 @@
     }
   }
 
-  function showOverlay(t) {
+  function showOverlay(t, sid) {
     const inner = $("overlayInner");
     inner.innerHTML = "";
     inner.appendChild(el("h3", null, `${t.name} — ` +
@@ -320,9 +334,9 @@
     if (t.explanation) inner.appendChild(el("p", "muted", t.explanation));
     if (t.not_scored_reason) inner.appendChild(el("p", "muted",
       t.not_scored_reason));
-    if (t.score !== null && currentSession) {
+    if (t.score !== null && sid) {
       const img = document.createElement("img");
-      img.src = `/overlays/${currentSession}/${t.name.replace(/ /g, "_")}.jpg`;
+      img.src = `/overlays/${sid}/${t.name.replace(/ /g, "_")}.jpg`;
       img.alt = "measurement overlay";
       img.onerror = () => img.replaceWith(
         el("p", "muted", "Overlay unavailable for this session."));
@@ -337,28 +351,41 @@
 
   /* ---------- new session ---------- */
   $("goScore").addEventListener("click", async () => {
-    const side = $("fSide").files[0], rear = $("fRear").files[0];
+    const side = $("fSide").files[0], rear = $("fRear").files[0],
+          vid = $("fVid").files[0];
     const msg = $("scoreMsg");
     if (!side || !rear) {
       msg.hidden = false; msg.textContent = "Side and rear photos are required.";
       return;
     }
+    if (vid && vid.size > 25 * 1024 * 1024) {
+      msg.hidden = false;
+      msg.textContent = "Video too large (max 25 MB) — record about 8 seconds.";
+      return;
+    }
+    if (!attemptId)
+      attemptId = "console-" + Math.random().toString(36).slice(2, 10);
     const fd = new FormData();
     fd.append("animal_id", sel.value);
-    fd.append("device_session_id",
-              "console-" + Math.random().toString(36).slice(2, 10));
+    fd.append("device_session_id", attemptId);
     fd.append("side_photo", side);
     fd.append("rear_photo", rear);
-    if ($("fVid").files[0]) fd.append("gait_video", $("fVid").files[0]);
+    if (vid) fd.append("gait_video", vid);
     $("goScore").disabled = true;
     msg.hidden = false; msg.textContent = "Scoring…";
     try {
       const r = await fetchT("/session", { method: "POST", body: fd }, 120000);
       const data = await r.json();
-      if (!r.ok) { msg.textContent = data.detail || "Refused."; return; }
+      if (!r.ok) {
+        attemptId = null;  // refused (ineligible/too large): next try is new
+        msg.textContent = data.detail || "Refused.";
+        return;
+      }
+      attemptId = null;    // stored: a further click is a NEW session
       msg.hidden = true;
       renderScorecard($("scorecard"), data);
-    } catch { msg.textContent = "Connection problem — try again."; }
+    } catch { msg.textContent =
+        "Connection problem — press Score again to retry this upload."; }
     finally { $("goScore").disabled = false; }
   });
 
@@ -388,10 +415,20 @@
         if ((s.health_flags || []).length)
           row.appendChild(el("div", "badge no", s.health_flags.join(", ")));
         row.addEventListener("click", async () => {
-          const rr = await fetchT(`/session/${s.session_id}`);
-          if (rr.ok) {
+          const hc = $("histCard");
+          hc.innerHTML = ""; hc.appendChild(el("div", "sys", "Loading session…"));
+          try {
+            const rr = await fetchT(`/session/${s.session_id}`);
+            if (!rr.ok) {
+              hc.innerHTML = "";
+              hc.appendChild(el("div", "sys", "Could not open this session."));
+              return;
+            }
             const doc = await rr.json();
-            renderScorecard($("histCard"), doc.result);
+            renderScorecard(hc, doc.result);
+          } catch {
+            hc.innerHTML = "";
+            hc.appendChild(el("div", "sys", "Connection problem — tap again."));
           }
         });
         box.appendChild(row);

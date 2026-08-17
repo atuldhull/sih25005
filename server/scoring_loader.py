@@ -83,9 +83,10 @@ def score_animal(side_img, rear_img, video_path, animal_record) -> dict:
         reason = f"not importable: {_real_import_error}"
 
     result = _fake_score(side_img, rear_img, video_path, animal_record)
-    # 'baseline', not 'fake': the app may surface this string, and the
-    # full reason is for the team, not the venue network
+    # 'baseline', not 'fake' - and NEVER persist the internal reason
+    # into stored sessions (they're served over unauthenticated GET);
+    # the reason goes to the server log only
     result["engine"] = "baseline"
-    if os.environ.get("SIH_DEBUG"):
-        result["engine"] = f"baseline ({reason})"
+    import sys
+    print(f"[loader] baseline engine used - {reason}", file=sys.stderr)
     return result
