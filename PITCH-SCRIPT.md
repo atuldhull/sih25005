@@ -35,7 +35,9 @@ to physically visit every farm, and those classifiers barely exist.
 
 Our answer is **Pashu Mitra**. Two photos and an eight-second walking
 video, from any field worker's phone, produce the complete official
-scorecard. Three things separate us from every other team today: the
+scorecard. *(sweep a hand across the phone-screen strip)* This is the
+whole flow in the worker's hand — scan the tag, two guided photos, a
+short walk, saved offline. Three things separate us from every other team today: the
 animal's own **ear tag becomes our measuring ruler** — no published
 system anywhere does this; our system **refuses to score when it
 shouldn't**, instead of guessing; and this is **not a concept — it runs
