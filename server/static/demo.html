@@ -211,7 +211,16 @@
     try {
       const r = await fetchT("/animals");
       const list = (await r.json()).animals;
-      if (!Array.isArray(list) || !list.length) throw new Error("empty");
+      if (!Array.isArray(list)) throw new Error("bad payload");
+      if (!list.length) {
+        // reachable but empty = not seeded. Say THAT, not "unreachable"
+        msg.hidden = false;
+        msg.textContent = "No animals in the database — run " +
+                          "stage_ready.bat to seed the demo story.";
+        $("histList").textContent = "No animals in the database.";
+        setTimeout(loadAnimals, 3000);
+        return;
+      }
       sel.innerHTML = "";
       list.forEach(a => {
         const o = document.createElement("option");
@@ -220,7 +229,8 @@
         o.dataset.eligible = a.eligible;
         sel.appendChild(o);
       });
-      if (msg.textContent.startsWith("Server unreachable")) msg.hidden = true;
+      if (/^(Server unreachable|No animals)/.test(msg.textContent))
+        msg.hidden = true;      // recovered - drop the stale banner
       updateBadge(); loadHistory();
     } catch {
       // keep whatever options exist, say so on the VISIBLE tab, retry
@@ -401,8 +411,12 @@
       msg.hidden = true;
       renderScorecard($("scorecard"), data);
     } catch {
-      if (sel.value === forAnimal) msg.textContent =
-        "Connection problem — press Score again to retry this upload.";
+      if (sel.value === forAnimal) {
+        msg.textContent =
+          "Connection problem — press Score again to retry this upload.";
+      } else {
+        msg.hidden = true;   // never leave a frozen "Scoring…" behind
+      }
     }
     finally { $("goScore").disabled = false; }
   });
@@ -436,7 +450,10 @@
         if ((s.health_flags || []).length)
           row.appendChild(el("div", "badge no", s.health_flags.join(", ")));
         row.addEventListener("click", async () => {
-          const hc = $("histCard"), forAnimal = sel.value;
+          // forAnimal is loadHistory's: the animal these rows were BUILT
+          // for, not whatever happens to be selected at click time -
+          // otherwise a still-visible stale row passes the guard
+          const hc = $("histCard");
           hc.innerHTML = ""; hc.appendChild(el("div", "sys", "Loading session…"));
           try {
             const rr = await fetchT(`/session/${s.session_id}`);
