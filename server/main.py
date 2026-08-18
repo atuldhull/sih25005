@@ -2,7 +2,7 @@ import os
 import re
 import time
 from collections import defaultdict, deque
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -293,10 +293,29 @@ def create_session(
     result["session_id"] = device_session_id
     result["eligible"] = eligible
     result["eligible_reason"] = reason
-    # the server owns the BPA record - stamp registered breed if the
-    # pipeline left it blank
+    # the server owns the BPA record and the session metadata - fill
+    # anything the engine left blank, so swapping engines can never hand
+    # the app a null in a field its models declare non-nullable
     if not result.get("breed_registered"):
         result["breed_registered"] = animal.get("breed")
+    if result.get("animal_id") is None:
+        result["animal_id"] = animal_id
+    if result.get("breed_verified") is None:
+        result["breed_verified"] = False
+        result["breed_verify_confidence"] = 0.0
+    if not result.get("captured_at"):
+        result["captured_at"] = datetime.now().astimezone().isoformat(
+            timespec="seconds")
+    if result.get("synced") is None:
+        result["synced"] = True
+    # pixel coordinates are integers on the wire: the app parses them as
+    # ints and a float would be a hard decode failure on the phone
+    for t in result.get("traits", []):
+        pts = t.get("overlay_points")
+        if isinstance(pts, list):
+            t["overlay_points"] = [
+                [int(round(p[0])), int(round(p[1]))] for p in pts
+                if isinstance(p, (list, tuple)) and len(p) == 2]
 
     # screening layer: deterministic risk estimation from the symptom
     # vector (Person 2's detectors fill it; the VKG reasons over it)

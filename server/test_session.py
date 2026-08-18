@@ -98,6 +98,19 @@ def main():
         "413 left an orphan upload directory behind"
     print("PASS  oversized upload -> 413 with no orphan folder")
 
+    # the server must fill session metadata itself, so that adopting ANY
+    # engine (Person 2's pipeline included) can never hand the app a null
+    # in a field its models declare non-nullable
+    assert body["animal_id"] == ELIGIBLE, body["animal_id"]
+    assert isinstance(body["breed_verified"], bool)
+    assert isinstance(body.get("captured_at"), str) and body["captured_at"]
+    assert body["breed_registered"], body["breed_registered"]
+    for t in body["traits"]:
+        for p in t["overlay_points"]:
+            assert all(isinstance(v, int) for v in p), (t["name"], p)
+    print("PASS  server stamps animal_id/breed/captured_at and forces "
+          "integer overlay points (engine-independent)")
+
     # the session id becomes a folder name AND a URL segment. An ISO
     # timestamp (the obvious offline-queue key) is an illegal Windows
     # path, and ".." would escape uploads/ - both must be refused with a
