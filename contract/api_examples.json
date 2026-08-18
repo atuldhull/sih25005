@@ -29,7 +29,7 @@
     "content_type": "multipart/form-data",
     "fields": {
       "animal_id": "356279812345",
-      "device_session_id": "app-generated unique id, used to prevent duplicates on retry",
+      "device_session_id": "app-generated unique id, used to prevent duplicates on retry. MUST match [A-Za-z0-9_-]{1,64} - it becomes a folder name on the server and a URL segment, so no dots, spaces, colons or slashes. Do NOT use a raw ISO timestamp (the colons are rejected); e.g. use 'dev1-20260818-103000-a1b2' or a UUID with the dashes kept and braces stripped. Anything else gets 422",
       "side_photo": "(file)",
       "rear_photo": "(file)",
       "gait_video": "(file)"

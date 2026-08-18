@@ -81,7 +81,22 @@ def main():
             ok = False
             continue
 
-        problems = validate(result, mode="pipeline")
+        if not isinstance(result, dict):
+            print(f"[FAIL] score_animal returned {type(result).__name__}, "
+                  "not a dict - the server would keep the baseline. It "
+                  "must return the contract/scoring_result.json shape.")
+            ok = False
+            continue
+
+        try:
+            problems = validate(result, mode="pipeline")
+        except Exception as e:
+            print(f"[FAIL] the contract validator could not even read this "
+                  f"result ({type(e).__name__}: {e}) - check that 'traits' "
+                  "is a list of dicts and every field exists.")
+            ok = False
+            continue
+
         if problems:
             print(f"[FAIL] {len(problems)} contract violation(s) - the "
                   "server would REJECT this output and use baseline:")
@@ -93,8 +108,10 @@ def main():
         else:
             print("[OK]   contract valid (pipeline mode)")
 
-        scored = sum(1 for t in result.get("traits", [])
-                     if isinstance(t, dict) and t.get("score") is not None)
+        traits = result.get("traits")
+        scored = sum(1 for t in traits
+                     if isinstance(t, dict) and t.get("score") is not None) \
+            if isinstance(traits, list) else 0
         if scored > 0:
             print(f"[OK]   {scored}/20 traits scored")
         else:
@@ -115,6 +132,11 @@ def main():
                       "landing; coordinate with Person 3 before demo day.")
 
     print("\n" + "=" * 58)
+    if args.video is None:
+        print("[NOTE] the gait-video argument was NOT exercised. The "
+              "server passes a real .mp4 path whenever the app attaches "
+              "a clip (and None when it does not) - re-run with "
+              "--video <file.mp4> to cover that call shape too.")
     if ok:
         print("VERDICT: the server would ADOPT this pipeline "
               "(hot-swap within 30 s of landing, no restart).")

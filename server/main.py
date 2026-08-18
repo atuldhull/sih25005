@@ -25,11 +25,6 @@ from scoring_loader import engine_status, score_animal
 
 app = FastAPI(title="SIH25005 Backend")
 
-# hackathon LAN: allow browser-based clients too (Flutter web builds,
-# quick HTML test pages) - native apps ignore CORS entirely
-app.add_middleware(CORSMiddleware, allow_origins=["*"],
-                   allow_methods=["*"], allow_headers=["*"])
-
 # cheap insurance against quota-burn/CPU loops from strangers on the
 # network: per-IP sliding-window limits on the expensive endpoints.
 # Generous enough that no honest demo ever hits them.
@@ -47,6 +42,10 @@ _rate_hits: dict = defaultdict(deque)
 _BODY_CAPS = {"/session": 50 * 1024 * 1024,
               "/chat/voice": 8 * 1024 * 1024,
               "/transcribe": 8 * 1024 * 1024}
+
+# session ids become folder names on disk AND appear in /overlays and
+# /session URLs - one charset, enforced on write and read alike
+_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 @app.middleware("http")
@@ -79,6 +78,16 @@ async def _rate_limit(request, call_next):
                               "please wait a minute"})
             bucket.append(now)
     return await call_next(request)
+
+
+# CORS is registered AFTER the gate above so it ends up OUTERMOST in the
+# stack: without this, the 411/413/429 short-circuit responses would
+# carry no Access-Control-Allow-Origin and a browser client would see an
+# opaque network error instead of the reason.
+# hackathon LAN: allow browser-based clients too (Flutter web builds,
+# quick HTML test pages) - native apps ignore CORS entirely
+app.add_middleware(CORSMiddleware, allow_origins=["*"],
+                   allow_methods=["*"], allow_headers=["*"])
 
 client = MongoClient("mongodb://127.0.0.1:27017", serverSelectionTimeoutMS=3000)
 db = client["sih25005"]
@@ -225,6 +234,14 @@ def create_session(
     # sync on purpose: FastAPI runs sync handlers in a threadpool, so
     # when the real ML pipeline (seconds of CPU) replaces the fake
     # engine, /ping and /chat keep answering while a session scores
+    # this id becomes a FOLDER NAME and a URL path segment. Unvalidated,
+    # a timestamp id ("...T10:30:00") is an illegal Windows path (500 on
+    # every retry) and "../.." would escape the uploads folder entirely.
+    if not _SESSION_ID_RE.fullmatch(device_session_id):
+        raise HTTPException(
+            status_code=422,
+            detail="device_session_id must be 1-64 characters of "
+                   "A-Z a-z 0-9 - _ (no dots, spaces, colons or slashes)")
     try:
         animal = db.animals.find_one({"_id": animal_id})
     except PyMongoError:
@@ -357,7 +374,7 @@ def sync_check(body: SyncCheckRequest):
 
 @app.get("/overlays/{session_id}/{trait_file}")
 def get_overlay(session_id: str, trait_file: str):
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
+    if not _SESSION_ID_RE.fullmatch(session_id):
         raise HTTPException(status_code=404, detail="unknown session")
 
     target = _slug(trait_file.rsplit(".", 1)[0])
@@ -380,7 +397,13 @@ def get_overlay(session_id: str, trait_file: str):
     files = session.get("files", {})
     source = (files.get("rear.jpg") if trait["view"] in ("rear", "video")
               else files.get("side.jpg"))
-    render_overlay(source, trait, cached)
+    # render to a private temp file, then swap it in atomically: two
+    # judges tapping the same trait at once must never see a half-written
+    # JPEG (cached.exists() turns true the moment PIL opens for writing)
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cached.with_name(f"{cached.stem}.{uuid.uuid4().hex[:8]}.tmp")
+    render_overlay(source, trait, tmp)
+    os.replace(tmp, cached)          # atomic on the same volume
     return FileResponse(cached, media_type="image/jpeg")
 
 

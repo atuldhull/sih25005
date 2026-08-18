@@ -98,6 +98,34 @@ def main():
         "413 left an orphan upload directory behind"
     print("PASS  oversized upload -> 413 with no orphan folder")
 
+    # the session id becomes a folder name AND a URL segment. An ISO
+    # timestamp (the obvious offline-queue key) is an illegal Windows
+    # path, and ".." would escape uploads/ - both must be refused with a
+    # reason, never crash or write outside the folder.
+    for bad in ["2026-08-18T10:30:00.123", "../../../pwned",
+                "..\\..\\pwned", "D:/abs_pwned", "a/b", "sess 001",
+                "x" * 65]:
+        rb = client.post("/session", data={"animal_id": ELIGIBLE,
+                                          "device_session_id": bad},
+                         files=files())
+        assert rb.status_code in (404, 422), \
+            f"{bad!r} -> {rb.status_code} {rb.text[:120]}"
+    assert not Path("D:/pwned").exists() and not Path("D:/abs_pwned").exists()
+    print("PASS  bad session ids (timestamp/traversal/absolute/spaces) "
+          "refused, nothing written outside uploads/")
+
+    # browser clients must be able to READ the short-circuit refusals:
+    # a 411/413 returned above the CORS layer would look like a network
+    # error instead of a reason
+    r_cors = client.post("/session", content=_stream(),
+                         headers={"Content-Type":
+                                  "multipart/form-data; boundary=zz",
+                                  "Origin": "http://localhost:5000"})
+    assert r_cors.status_code == 411
+    assert r_cors.headers.get("access-control-allow-origin") == "*", \
+        "411 short-circuit is missing CORS headers"
+    print("PASS  411/413 refusals carry CORS headers")
+
     # offline-queue flush: uploading a dozen queued sessions back to
     # back is a DEMO FEATURE - the rate limiter must not trip
     codes = []

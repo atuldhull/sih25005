@@ -17,6 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
 
 def _http_json(url, timeout=2.5):
@@ -37,21 +38,25 @@ def check(level, name, detail=""):
 
 
 def lan_ips():
-    ips = set()
+    """The routed address FIRST - that is the one the phone can reach.
+    Virtual switches (Hyper-V/WSL) and APIPA are filtered/deprioritised
+    so nobody types a 172.x vEthernet address into the app."""
+    routed, others = None, []
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))          # no packet sent; picks a route
-        ips.add(s.getsockname()[0])
+        routed = s.getsockname()[0]
         s.close()
     except OSError:
         pass
     try:
         for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
-            if not ip.startswith("127."):
-                ips.add(ip)
+            if ip.startswith(("127.", "169.254.")) or ip == routed:
+                continue
+            others.append(ip)
     except OSError:
         pass
-    return sorted(ips)
+    return routed, sorted(others)
 
 
 def main():
@@ -194,70 +199,79 @@ def main():
               "voice falls back to the offline Windows voice, chat to "
               "local ollama - the demo still works")
 
-    # 7. Demo story + day-drift hazards
-    if db is not None:
-        n_animals = db.animals.count_documents({})
-        if n_animals == 20:
-            check("PASS", "animals collection seeded (20)")
-        else:
-            check("FAIL", f"animals collection has {n_animals}, expected 20",
-                  "run: venv\\Scripts\\python demo_seed.py")
-
-        star3 = db.sessions.find_one({"session_id": "demo-star-3"})
-        if star3 is None:
-            check("FAIL", "demo story not seeded",
-                  "run: venv\\Scripts\\python demo_seed.py")
-        else:
-            check("PASS", "demo story present (star history found)")
-
-            import rules
-            import vkg
-            for aid, role in [(STAR, "star (live re-scan)"),
-                              (LIVE_TRIGGER, "live outbreak trigger")]:
-                a = db.animals.find_one({"_id": aid})
-                ok, reason = rules.check_eligibility(a) if a else (False,
-                                                                   "missing")
-                if ok:
-                    check("PASS", f"{role} eligible TODAY", reason)
-                else:
-                    check("FAIL", f"{role} NOT eligible today: {reason}",
-                          "re-run demo_seed.py (dates are relative to "
-                          "seed day and have drifted)")
-
-            n = vkg.herd_symptom_count(db, "Anand", "skin_nodules",
-                                       exclude_animal=LIVE_TRIGGER)
-            if n >= 2:
-                check("PASS", f"outbreak cluster armed ({n} flagged; "
-                              f"scoring the trigger makes {n + 1})")
+    # 7. Demo story + day-drift hazards. Guarded: if mongod dies while
+    # this runs (it can - the ollama warm check above may hold the
+    # process for a while), the run must keep going and still print a
+    # verdict instead of dying mid-report.
+    try:
+        if db is not None:
+            n_animals = db.animals.count_documents({})
+            if n_animals == 20:
+                check("PASS", "animals collection seeded (20)")
             else:
-                check("FAIL", f"outbreak cluster stale ({n} within 14 days)",
-                      "re-run demo_seed.py - seeded sessions aged out "
-                      "of the 14-day window")
+                check("FAIL",
+                      f"animals collection has {n_animals}, expected 20",
+                      "run: venv\\Scripts\\python demo_seed.py")
 
-            newest = star3.get("date", "")
-            if newest and (date.today() -
-                           datetime.strptime(newest, "%Y-%m-%d").date()
-                           ).days > 10:
-                check("WARN", "story was seeded a while ago",
-                      "re-run demo_seed.py for fresh dates")
+            star3 = db.sessions.find_one({"session_id": "demo-star-3"})
+            if star3 is None:
+                check("FAIL", "demo story not seeded",
+                      "run: venv\\Scripts\\python demo_seed.py")
+            else:
+                check("PASS", "demo story present (star history found)")
 
-        alerts = db.vet_alerts.count_documents({})
-        herd = db.vet_alerts.count_documents({"herd_alerts.0":
-                                              {"$exists": True}})
-        if alerts >= 4 and herd >= 1:
-            check("PASS", f"officer feed ready ({alerts} alerts, "
-                          f"{herd} with outbreak signal)")
-        else:
-            check("FAIL", f"officer feed incomplete ({alerts} alerts, "
-                          f"{herd} outbreak)", "re-run demo_seed.py")
+                import rules
+                import vkg
+                for aid, role in [(STAR, "star (live re-scan)"),
+                                  (LIVE_TRIGGER, "live outbreak trigger")]:
+                    a = db.animals.find_one({"_id": aid})
+                    ok, reason = rules.check_eligibility(a) if a else \
+                        (False, "missing")
+                    if ok:
+                        check("PASS", f"{role} eligible TODAY", reason)
+                    else:
+                        check("FAIL",
+                              f"{role} NOT eligible today: {reason}",
+                              "re-run demo_seed.py (dates are relative to "
+                              "seed day and have drifted)")
 
-        stray = db.sessions.count_documents({
-            "animal_id": STAR,
-            "session_id": {"$not": {"$regex": "^demo-"}}})
-        if stray:
-            check("WARN", f"star has {stray} non-demo session(s)",
-                  "test/rehearsal rows will show in the hero history "
-                  "tab - re-run demo_seed.py to reset")
+                n = vkg.herd_symptom_count(db, "Anand", "skin_nodules",
+                                           exclude_animal=LIVE_TRIGGER)
+                if n >= 2:
+                    check("PASS", f"outbreak cluster armed ({n} flagged; "
+                                  f"scoring the trigger makes {n + 1})")
+                else:
+                    check("FAIL",
+                          f"outbreak cluster stale ({n} within 14 days)",
+                          "re-run demo_seed.py - seeded sessions aged out "
+                          "of the 14-day window")
+
+                newest = star3.get("date", "")
+                if newest and (date.today() -
+                               datetime.strptime(newest, "%Y-%m-%d").date()
+                               ).days > 10:
+                    check("WARN", "story was seeded a while ago",
+                          "re-run demo_seed.py for fresh dates")
+
+            alerts = db.vet_alerts.count_documents({})
+            herd = db.vet_alerts.count_documents({"herd_alerts.0":
+                                                  {"$exists": True}})
+            if alerts >= 4 and herd >= 1:
+                check("PASS", f"officer feed ready ({alerts} alerts, "
+                              f"{herd} with outbreak signal)")
+            else:
+                check("FAIL", f"officer feed incomplete ({alerts} alerts, "
+                              f"{herd} outbreak)", "re-run demo_seed.py")
+
+            stray = db.sessions.count_documents({
+                "animal_id": STAR,
+                "session_id": {"$not": {"$regex": "^demo-"}}})
+            if stray:
+                check("WARN", f"star has {stray} non-demo session(s)",
+                      "test/rehearsal rows will show in the hero history "
+                      "tab - re-run demo_seed.py to reset")
+    except PyMongoError as e:
+        check("FAIL", "MongoDB went away mid-check", str(e))
 
     # 8. Demo assets + overlay cache warm
     for name in ("side.jpg", "rear.jpg"):
@@ -281,42 +295,81 @@ def main():
     # and FAIL loudly rather than find out on stage.
     try:
         sys.path.append(str(HERE.parent / "contract"))
+        import time as _time
+
         import vkg
-        from scoring_loader import engine_status, score_animal
+        from scoring_loader import RETRY_SECONDS, engine_status, score_animal
+
+        # the loader imports ml/ on a BACKGROUND thread, so asking once
+        # would report "not importable" for a pipeline that is seconds
+        # from being adopted. If ml/pipeline.py exists on disk, wait for
+        # the import to settle before judging anything.
+        ml_present = (HERE.parent / "ml" / "pipeline.py").exists()
         st = engine_status()
+        if ml_present and not st.get("real_pipeline_importable"):
+            print("       ml/pipeline.py found - waiting for the import "
+                  "to finish (up to 90s)...")
+            deadline = _time.monotonic() + 90
+            while _time.monotonic() < deadline:
+                _time.sleep(2)
+                st = engine_status()
+                if st.get("real_pipeline_importable"):
+                    break
+                if _time.monotonic() > deadline - RETRY_SECONDS:
+                    break
         importable = st.get("real_pipeline_importable")
-        check("PASS", "scoring engine: " +
-              ("ml-pipeline importable" if importable else
-               "baseline (ml/ not importable - expected until "
-               "Person 2's pipeline lands)"))
+        if ml_present and not importable:
+            check("FAIL", "ml/pipeline.py is present but NOT importable",
+                  "the server will silently keep the baseline engine - "
+                  "run: venv\\Scripts\\python ..\\contract\\"
+                  "check_pipeline.py to see the import error")
+        else:
+            check("PASS", "scoring engine: " +
+                  ("ml-pipeline imported and will be used" if importable
+                   else "baseline (no ml/ yet - expected until Person 2's "
+                        "pipeline lands)"))
+
+        # rehearse with the SAME real files the console uploads - passing
+        # nonexistent paths would crash a real CV pipeline, the loader
+        # would fall back, and this check would pass on the baseline
+        side = str(HERE / "demo_assets" / "side.jpg")
+        rear = str(HERE / "demo_assets" / "rear.jpg")
         trig = db.animals.find_one({"_id": LIVE_TRIGGER}) \
             if db is not None else None
         if trig is not None:
-            res = score_animal("demo_side.jpg", "demo_rear.jpg", None, trig)
+            res = score_animal(side, rear, None, trig)
+            engine = res.get("engine")
+            if importable and engine != "ml-pipeline":
+                check("FAIL", "the ml pipeline was REJECTED on a real call",
+                      f"it imported but this scoring returned "
+                      f"engine='{engine}' - it crashed or violated the "
+                      "contract. Run ..\\contract\\check_pipeline.py for "
+                      "the exact reason")
             symptoms = {s.get("symptom")
-                        for s in res.get("symptom_vector", [])}
+                        for s in res.get("symptom_vector", []) or []}
             n = vkg.herd_symptom_count(db, trig["village"], "skin_nodules",
                                        exclude_animal=LIVE_TRIGGER)
             if "skin_nodules" in symptoms and \
                     n + 1 >= vkg.OUTBREAK_MIN_ANIMALS:
                 check("PASS", "LIVE TRIGGER rehearsed",
-                      f"engine '{res.get('engine')}' detects nodules; "
-                      f"outbreak banner would show {n + 1} animals")
+                      f"engine '{engine}' detects nodules; outbreak "
+                      f"banner would show {n + 1} animals")
             else:
                 check("FAIL", "LIVE TRIGGER would NOT fire on stage",
-                      f"engine '{res.get('engine')}' returned "
+                      f"engine '{engine}' returned "
                       f"{sorted(symptoms) or 'no symptoms'}, prior "
                       f"flagged animals={n}. If ml/ landed recently, "
                       "move it aside for the demo; else re-run "
                       "demo_seed.py")
             star = db.animals.find_one({"_id": STAR})
             if star is not None:
-                sres = score_animal("demo_side.jpg", "demo_rear.jpg",
-                                    None, star)
+                sres = score_animal(side, rear, None, star)
                 if sres.get("symptom_vector"):
                     check("WARN", "star re-scan is no longer "
                           "symptom-free", str([s.get("symptom") for s
                                                in sres["symptom_vector"]]))
+    except PyMongoError as e:
+        check("FAIL", "MongoDB went away during the engine check", str(e))
     except Exception as e:
         check("FAIL", "scoring loader broken", str(e))
 
@@ -328,12 +381,18 @@ def main():
         check("FAIL", f"low disk space ({free_gb:.1f} GB free)")
 
     # 11. Where the phone app should point
-    ips = lan_ips()
-    if ips:
-        urls = "  ".join(f"http://{ip}:8000" for ip in ips)
-        check("PASS", "server address for the app", urls)
+    routed, others = lan_ips()
+    if routed:
+        check("PASS", "GIVE THE APP THIS ADDRESS", f"http://{routed}:8000")
+        if others:
+            print("       (other interfaces, usually virtual switches - "
+                  "ignore unless the hotspot is one of them: " +
+                  ", ".join(others) + ")")
         print("       (if the phone can't connect: allow python through "
-              "the Windows firewall, same Wi-Fi)")
+              "the Windows firewall, and be on the SAME hotspot)")
+    elif others:
+        check("WARN", "no routed address - not on a network?",
+              "candidates: " + ", ".join(f"http://{i}:8000" for i in others))
     else:
         check("WARN", "no LAN IP found", "connect the laptop to Wi-Fi/hotspot")
 
