@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from pymongo import MongoClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 import threading
 import uuid
@@ -34,13 +34,34 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 # network: per-IP sliding-window limits on the expensive endpoints.
 # Generous enough that no honest demo ever hits them.
 _RATE_LIMITS = {"/chat": (20, 60.0), "/chat/voice": (6, 60.0),
-                "/transcribe": (10, 60.0)}
+                "/transcribe": (10, 60.0), "/session": (10, 60.0)}
 _rate_lock = threading.Lock()
 _rate_hits: dict = defaultdict(deque)
+
+# refuse oversized bodies BEFORE they get buffered (browsers always send
+# Content-Length for form uploads); the per-file caps inside /session
+# still cover anything that slips past
+_BODY_CAPS = {"/session": 50 * 1024 * 1024,
+              "/chat/voice": 8 * 1024 * 1024,
+              "/transcribe": 8 * 1024 * 1024}
 
 
 @app.middleware("http")
 async def _rate_limit(request, call_next):
+    cap = _BODY_CAPS.get(request.url.path)
+    if cap and request.method == "POST":
+        cl = request.headers.get("content-length", "")
+        if not cl.isdigit():
+            # no/odd Content-Length = chunked streaming, which would be
+            # spooled to disk unbounded BEFORE the handler runs. Every
+            # real browser/app form post sends Content-Length.
+            return JSONResponse(status_code=411, content={
+                "detail": "length required - streamed uploads are not "
+                          "accepted"})
+        if int(cl) > cap:
+            return JSONResponse(status_code=413, content={
+                "detail": f"upload too large - max {cap // (1024 * 1024)} "
+                          "MB per request"})
     lim = _RATE_LIMITS.get(request.url.path)
     if lim and request.client:
         max_hits, window = lim
@@ -100,6 +121,7 @@ def _startup():
             import httpx
             r = httpx.post(f"{chat.OLLAMA_URL}/api/chat", timeout=120.0, json={
                 "model": chat.CHAT_MODEL, "stream": False,
+                "keep_alive": "4h",   # stay resident for the whole demo
                 "messages": [{"role": "user", "content": "hi"}],
                 "options": {"num_predict": 1},
             })
@@ -200,7 +222,14 @@ def create_session(
     # sync on purpose: FastAPI runs sync handlers in a threadpool, so
     # when the real ML pipeline (seconds of CPU) replaces the fake
     # engine, /ping and /chat keep answering while a session scores
-    animal = db.animals.find_one({"_id": animal_id})
+    try:
+        animal = db.animals.find_one({"_id": animal_id})
+    except PyMongoError:
+        # a JSON 503 with the actual fix, not a text/plain 500 the
+        # console would mislabel as a connection problem
+        raise HTTPException(status_code=503,
+                            detail="database unavailable - restart MongoDB "
+                                   "(run_server.bat starts it)")
     if animal is None:
         raise HTTPException(status_code=404, detail="animal not found in BPA records")
 
@@ -216,12 +245,11 @@ def create_session(
     if not eligible:
         raise HTTPException(status_code=422, detail=f"animal not eligible: {reason}")
 
-    session_dir = UPLOAD_DIR / device_session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-    saved = {}
-    # size caps: one oversized upload must not fill the demo laptop's disk
+    # size-check EVERYTHING before writing ANYTHING, so a refused
+    # upload never leaves a half-written orphan dir behind
     caps = {"side.jpg": 10 * 1024 * 1024, "rear.jpg": 10 * 1024 * 1024,
             "gait.mp4": 25 * 1024 * 1024}
+    blobs = {}
     for filename, upload in [("side.jpg", side_photo), ("rear.jpg", rear_photo),
                              ("gait.mp4", gait_video)]:
         if upload is not None:
@@ -232,8 +260,13 @@ def create_session(
                     detail=f"{filename.split('.')[0]} file too large - max "
                            f"{caps[filename] // (1024 * 1024)} MB. Use a "
                            "smaller photo / record a shorter clip (~8 s).")
-            (session_dir / filename).write_bytes(data)
-            saved[filename] = str(session_dir / filename)
+            blobs[filename] = data
+    session_dir = UPLOAD_DIR / device_session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    saved = {}
+    for filename, data in blobs.items():
+        (session_dir / filename).write_bytes(data)
+        saved[filename] = str(session_dir / filename)
 
     result = score_animal(saved.get("side.jpg"), saved.get("rear.jpg"),
                           saved.get("gait.mp4"), animal)

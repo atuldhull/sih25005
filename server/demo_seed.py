@@ -36,8 +36,11 @@ from pymongo import MongoClient
 import reports
 import seed
 import vkg
-from scoring_loader import score_animal
-from validate_result import validate  # path set up by scoring_loader
+# the BASELINE engine on purpose, never the ml/ hot-swap: the seeded
+# story must stay byte-identical no matter what pipeline landed today
+from scoring import score_animal
+import scoring_loader  # noqa: F401 - imported for the contract sys.path
+from validate_result import validate
 
 client = MongoClient("mongodb://127.0.0.1:27017")
 db = client["sih25005"]
@@ -80,6 +83,7 @@ def make_session(animal_id: str, days_ago: int, session_id: str,
 
     result = score_animal("demo_side.jpg", "demo_rear.jpg", "demo_gait.mp4",
                           animal)
+    result["engine"] = "baseline"
     result["session_id"] = session_id
 
     # eligibility as it was ON THE SESSION DATE, same wording as rules.py
@@ -100,9 +104,16 @@ def make_session(animal_id: str, days_ago: int, session_id: str,
                                "cross_check": None}
 
     # normalize the health layer for EVERY session - same path as the
-    # live server, so nothing in a stored doc renders as 'undefined'
+    # live server, so nothing in a stored doc renders as 'undefined'.
+    # health_flags use the ENGINE's vocabulary so seeded and live
+    # sessions read identically on the history badges
+    flag_map = {"skin_nodules": "visible_abnormality",
+                "gait_asymmetry": "locomotion_abnormal",
+                "hoof_abnormality": "locomotion_abnormal"}
     result["symptom_vector"] = symptoms
-    result["health_flags"] = [s["symptom"] for s in symptoms]
+    result["health_flags"] = sorted({flag_map.get(s["symptom"],
+                                                  s["symptom"])
+                                     for s in symptoms})
     risks = vkg.estimate_risks(symptoms)
     result["risk_report"] = risks
     herd_alerts = []
@@ -157,6 +168,9 @@ def main():
     db.sessions.delete_many({})
     db.vet_alerts.delete_many({})
     shutil.rmtree(OVERLAY_CACHE, ignore_errors=True)
+    # every upload dir is an orphan once sessions are wiped - clear
+    # rehearsal leftovers and 413-refused partials too
+    shutil.rmtree(UPLOADS, ignore_errors=True)
 
     # the outbreak needs 3+ flagged animals in ONE village, plus a 4th
     # eligible animal held back as the live on-stage trigger
@@ -195,6 +209,24 @@ def main():
     n = db.sessions.count_documents({"session_id": {"$regex": "^demo-"}})
     a = db.vet_alerts.count_documents({})
     print(f"done: {n} demo sessions, {a} vet alerts in the feed")
+
+    # pre-render every overlay now: first tap on stage is instant, and
+    # any render problem surfaces HERE instead of live
+    from overlays import render_overlay
+    rendered = 0
+    for sess in db.sessions.find({"session_id": {"$regex": "^demo-"}}):
+        files = sess.get("files", {})
+        out_dir = OVERLAY_CACHE / sess["session_id"]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for t in sess["result"]["traits"]:
+            if t["score"] is None or not t.get("overlay_points"):
+                continue
+            source = (files.get("rear.jpg") if t["view"] in ("rear", "video")
+                      else files.get("side.jpg"))
+            slug = "".join(c for c in t["name"].lower() if c.isalnum())
+            render_overlay(source, t, out_dir / f"{slug}.jpg")
+            rendered += 1
+    print(f"pre-rendered {rendered} trait overlays into the cache")
     print()
     print("RUNBOOK - the live moments:")
     print(f"  1. History/trend + chatbot: use star Gir {STAR}")

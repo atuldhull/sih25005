@@ -37,7 +37,8 @@
     "response": "the full scoring_result.json object (see scoring_result.json)",
     "response_on_retry": "same object with extra field duplicate:true - the app treats it as success and marks the queued session synced",
     "error_404": { "detail": "animal not found in BPA records" },
-    "error_422": { "detail": "animal not eligible: not in first lactation (currently lactation 2)" }
+    "error_422": { "detail": "animal not eligible: not in first lactation (currently lactation 2)" },
+    "error_413": { "detail": "side file too large - max 10 MB. Use a smaller photo / record a shorter clip (~8 s).", "_note": "caps: photos 10 MB each, video 25 MB, whole request 50 MB - compress/re-encode before upload and show the detail string to the user on 413" }
   },
 
   "GET /session/{session_id}": {

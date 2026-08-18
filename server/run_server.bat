@@ -30,14 +30,34 @@ if errorlevel 1 (
 ) else (
     echo MongoDB already running.
 )
+REM journal recovery after a crash can take longer than 3s - retry
+set /a _tries=0
+:mongo_wait
 powershell -NoProfile -Command "exit (1 - [int](Test-NetConnection 127.0.0.1 -Port 27017 -InformationLevel Quiet -WarningAction SilentlyContinue))"
-if errorlevel 1 (
-    echo ERROR: MongoDB is not answering on port 27017. Check D:\mongodb\data permissions/disk.
+if not errorlevel 1 goto mongo_ok
+set /a _tries+=1
+if %_tries% geq 10 (
+    echo ERROR: MongoDB is not answering on port 27017 after ~20s. Check D:\mongodb\data permissions/disk.
     pause
     exit /b 1
 )
+echo   waiting for MongoDB ^(%_tries%/10^)...
+timeout /t 2 /nobreak >nul
+goto mongo_wait
+:mongo_ok
+echo MongoDB is answering.
 
 cd /d "%~dp0"
+
+REM mid-demo recovery guard: if the server is already up, do not bind
+REM a second instance on the same port
+powershell -NoProfile -Command "try { Invoke-WebRequest -Uri http://127.0.0.1:8000/ping -UseBasicParsing -TimeoutSec 3 | Out-Null; exit 0 } catch { exit 1 }"
+if not errorlevel 1 (
+    echo Server is ALREADY RUNNING on port 8000 - not starting a second one.
+    echo MongoDB has been checked/restarted, so you are done.
+    pause
+    exit /b 0
+)
 
 echo.
 echo Your laptop's addresses (give Person 1 the hotspot one):

@@ -136,6 +136,16 @@
   @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(220, 38, 38, .18); } }
   .foot { text-align: center; font-size: 11px; color: var(--muted);
     padding: 0 0 10px; }
+
+  /* ---------- suggested questions ---------- */
+  .sugg { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 0 10px; }
+  .chip {
+    border: 1px solid var(--line); background: var(--card);
+    color: var(--ink); border-radius: 999px; padding: 7px 14px;
+    font-size: 12.5px; cursor: pointer; transition: all .15s;
+    font-family: inherit;
+  }
+  .chip:hover { border-color: var(--green-600); color: var(--green-700); }
 </style>
 </head>
 <body>
@@ -169,6 +179,8 @@
 
   <div id="chat"></div>
 
+  <div class="sugg" id="sugg"></div>
+
   <div class="composer-wrap">
     <div class="composer">
       <input id="box" type="text" maxlength="500" autocomplete="off"
@@ -186,6 +198,26 @@
   const $ = (id) => document.getElementById(id);
   const chat = $("chat"), box = $("box"), sel = $("animal");
   let recorder = null, recording = false, busy = false;
+
+  // tappable starters: fill the box (never auto-send - the user stays
+  // in control and can edit before sending)
+  const SUGGESTIONS = [
+    "What is her weight trend?",
+    "When can this animal be scored?",
+    "How do I take the side photo?",
+    "इसका वज़न कितना है?",
+    "स्कोर कब हो सकता है?",
+  ];
+  const suggBar = $("sugg");
+  SUGGESTIONS.forEach(q => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.textContent = q;
+    b.addEventListener("click", () => {
+      if (busy) return;
+      box.value = q; box.focus();
+    });
+    suggBar.appendChild(b);
+  });
 
   function setBusy(b) {
     busy = b;

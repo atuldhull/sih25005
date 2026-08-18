@@ -207,9 +207,11 @@
 
   /* ---------- animals ---------- */
   async function loadAnimals() {
+    const msg = $("scoreMsg");
     try {
       const r = await fetchT("/animals");
       const list = (await r.json()).animals;
+      if (!Array.isArray(list) || !list.length) throw new Error("empty");
       sel.innerHTML = "";
       list.forEach(a => {
         const o = document.createElement("option");
@@ -218,8 +220,15 @@
         o.dataset.eligible = a.eligible;
         sel.appendChild(o);
       });
+      if (msg.textContent.startsWith("Server unreachable")) msg.hidden = true;
       updateBadge(); loadHistory();
-    } catch { $("histList").textContent = "Server unreachable."; }
+    } catch {
+      // keep whatever options exist, say so on the VISIBLE tab, retry
+      msg.hidden = false;
+      msg.textContent = "Server unreachable — retrying…";
+      $("histList").textContent = "Server unreachable.";
+      setTimeout(loadAnimals, 3000);
+    }
   }
   function updateBadge() {
     const o = sel.selectedOptions[0], b = $("eligBadge");
@@ -229,6 +238,7 @@
     b.textContent = ok ? "Eligible for scoring" : "Not eligible now";
   }
   sel.addEventListener("change", () => { updateBadge(); loadHistory();
+    attemptId = null;   // a different animal is always a NEW attempt
     $("scorecard").innerHTML = ""; $("histCard").innerHTML = ""; });
 
   /* ---------- tabs ---------- */
@@ -365,8 +375,9 @@
     }
     if (!attemptId)
       attemptId = "console-" + Math.random().toString(36).slice(2, 10);
+    const forAnimal = sel.value;   // guard against mid-flight switching
     const fd = new FormData();
-    fd.append("animal_id", sel.value);
+    fd.append("animal_id", forAnimal);
     fd.append("device_session_id", attemptId);
     fd.append("side_photo", side);
     fd.append("rear_photo", rear);
@@ -375,27 +386,37 @@
     msg.hidden = false; msg.textContent = "Scoring…";
     try {
       const r = await fetchT("/session", { method: "POST", body: fd }, 120000);
-      const data = await r.json();
+      // a 500 can be text/plain - never let a parse error masquerade
+      // as a connection problem
+      const ct = r.headers.get("content-type") || "";
+      const data = ct.includes("json") ? await r.json() : {};
+      if (sel.value !== forAnimal) { msg.hidden = true; return; }
       if (!r.ok) {
         attemptId = null;  // refused (ineligible/too large): next try is new
-        msg.textContent = data.detail || "Refused.";
+        msg.textContent = data.detail ||
+          `Server error (HTTP ${r.status}) — check the server window.`;
         return;
       }
       attemptId = null;    // stored: a further click is a NEW session
       msg.hidden = true;
       renderScorecard($("scorecard"), data);
-    } catch { msg.textContent =
-        "Connection problem — press Score again to retry this upload."; }
+    } catch {
+      if (sel.value === forAnimal) msg.textContent =
+        "Connection problem — press Score again to retry this upload.";
+    }
     finally { $("goScore").disabled = false; }
   });
 
   /* ---------- history ---------- */
+  let histGen = 0;   // stale responses must never repaint the list
   async function loadHistory() {
     if (!sel.value) return;
+    const gen = ++histGen, forAnimal = sel.value;
     const box = $("histList");
     try {
-      const r = await fetchT(`/animal/${sel.value}/history`);
+      const r = await fetchT(`/animal/${forAnimal}/history`);
       const sessions = (await r.json()).sessions || [];
+      if (gen !== histGen || sel.value !== forAnimal) return;
       box.innerHTML = "";
       if (!sessions.length) { box.textContent = "No sessions yet."; return; }
       const weights = sessions.filter(s => s.weight_kg_mid != null);
@@ -415,25 +436,31 @@
         if ((s.health_flags || []).length)
           row.appendChild(el("div", "badge no", s.health_flags.join(", ")));
         row.addEventListener("click", async () => {
-          const hc = $("histCard");
+          const hc = $("histCard"), forAnimal = sel.value;
           hc.innerHTML = ""; hc.appendChild(el("div", "sys", "Loading session…"));
           try {
             const rr = await fetchT(`/session/${s.session_id}`);
+            if (sel.value !== forAnimal) return;   // switched meanwhile
             if (!rr.ok) {
               hc.innerHTML = "";
               hc.appendChild(el("div", "sys", "Could not open this session."));
               return;
             }
             const doc = await rr.json();
+            if (sel.value !== forAnimal) return;
             renderScorecard(hc, doc.result);
           } catch {
+            if (sel.value !== forAnimal) return;
             hc.innerHTML = "";
             hc.appendChild(el("div", "sys", "Connection problem — tap again."));
           }
         });
         box.appendChild(row);
       });
-    } catch { box.textContent = "Could not load history."; }
+    } catch {
+      if (gen === histGen && sel.value === forAnimal)
+        box.textContent = "Could not load history.";
+    }
   }
 
   /* ---------- alerts ---------- */

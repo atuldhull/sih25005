@@ -2,10 +2,12 @@
 
 There is no public Bharat Pashudhan API, so we mock it (and say so
 openly in the pitch). Calving dates are computed RELATIVE TO TODAY
-so the eligible/ineligible mix stays true no matter when you run
-this. Re-run any time: it wipes and reloads the animals collection.
+so the eligible/ineligible mix stays true no matter when you run this.
 
-Run:  venv\\Scripts\\python seed.py
+DO NOT run this standalone once the demo story exists - it resets the
+villages and calving dates the story depends on (the outbreak trigger
+silently stops firing). Use demo_seed.py, which calls this AND rebuilds
+the story:  venv\\Scripts\\python demo_seed.py
 """
 from datetime import date, timedelta
 
@@ -71,3 +73,15 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # standalone run after the demo story was seeded = the story's
+    # village moves and star calving date were just overwritten
+    client = MongoClient("mongodb://127.0.0.1:27017")
+    if client["sih25005"].sessions.count_documents(
+            {"session_id": {"$regex": "^demo-"}}) > 0:
+        print()
+        print("*" * 60)
+        print("WARNING: the demo story exists but you just reset the")
+        print("animals - the OUTBREAK TRIGGER IS NOW DISARMED.")
+        print("Run demo_seed.py to restore the full story:")
+        print("  venv\\Scripts\\python demo_seed.py")
+        print("*" * 60)

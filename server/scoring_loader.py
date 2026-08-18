@@ -29,23 +29,38 @@ _lock = threading.Lock()
 _real_score = None
 _real_import_error = "not tried yet"
 _next_retry = 0.0
+_importing = False
+
+
+def _do_import():
+    """Runs in a daemon thread: a real pipeline importing torch can
+    take 30+ seconds, and that must never happen on a request."""
+    global _real_score, _real_import_error, _importing
+    try:
+        if str(_REPO) not in sys.path:
+            sys.path.append(str(_REPO))
+        importlib.invalidate_caches()
+        mod = importlib.import_module("ml.pipeline")
+        with _lock:
+            _real_score = mod.score_animal
+            _real_import_error = None
+    except Exception as e:
+        with _lock:
+            _real_import_error = str(e)
+    finally:
+        with _lock:
+            _importing = False
 
 
 def _try_import():
-    global _real_score, _real_import_error, _next_retry
+    global _next_retry, _importing
     with _lock:
-        if _real_score is not None or time.monotonic() < _next_retry:
+        if _real_score is not None or _importing or \
+                time.monotonic() < _next_retry:
             return
         _next_retry = time.monotonic() + RETRY_SECONDS
-        try:
-            if str(_REPO) not in sys.path:
-                sys.path.append(str(_REPO))
-            importlib.invalidate_caches()
-            mod = importlib.import_module("ml.pipeline")
-            _real_score = mod.score_animal
-            _real_import_error = None
-        except Exception as e:
-            _real_import_error = str(e)
+        _importing = True
+    threading.Thread(target=_do_import, daemon=True).start()
 
 
 def engine_status() -> dict:

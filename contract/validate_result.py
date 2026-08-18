@@ -87,8 +87,20 @@ def validate(result: dict, mode: str = "pipeline") -> list[str]:
                      f"got {t.get('measure_class')!r}")
         if t.get("view") not in ("side", "rear", "video"):
             p.append(f"{where}: view must be side/rear/video, got {t.get('view')!r}")
-        if not isinstance(t.get("overlay_points"), list):
+        pts = t.get("overlay_points")
+        if not isinstance(pts, list):
             p.append(f"{where}: overlay_points must be a list")
+        else:
+            # each point must be an [x, y] pair of numbers - anything
+            # else crashes the overlay renderer at draw time
+            for j, pt in enumerate(pts):
+                if not (isinstance(pt, (list, tuple)) and len(pt) == 2
+                        and all(isinstance(v, (int, float))
+                                and not isinstance(v, bool)
+                                for v in pt)):
+                    p.append(f"{where}: overlay_points[{j}] must be "
+                             f"[x, y] numbers, got {pt!r}")
+                    break
     for name in TRAITS_20:
         if name not in seen:
             p.append(f"traits: missing NDDB trait '{name}'")

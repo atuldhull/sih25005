@@ -19,6 +19,12 @@ import re
 import threading
 from pathlib import Path
 
+# team convention: the HF model cache lives on D: so every account /
+# restored laptop finds the pre-downloaded whisper weights without the
+# user-scoped HF_HOME env var having to exist (preflight.py mirrors this)
+if "HF_HOME" not in os.environ and Path(r"D:\hf-cache").exists():
+    os.environ["HF_HOME"] = r"D:\hf-cache"
+
 # "small" is noticeably better than "base" at Hindi/Kannada and still
 # runs fine on CPU (~250 MB one-time download into the HF cache on D:)
 STT_MODEL = os.environ.get("SIH_STT_MODEL", "small")

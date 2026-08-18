@@ -72,6 +72,15 @@ def main():
     print(f"PASS  overlay rendered for '{scored_trait['name']}' "
           f"({len(r6.content)} bytes, cached on repeat)")
 
+    # clean up at the END too: this session belongs to the DEMO STAR,
+    # and a leftover test row would show in the on-stage history tab
+    db.sessions.delete_many({"session_id": {"$regex": "^test-session-"}})
+    for sid in ("test-session-001", "test-session-002"):
+        shutil.rmtree(Path(OVERLAY_DIR) / sid, ignore_errors=True)
+        shutil.rmtree(Path(OVERLAY_DIR).parent / "uploads" / sid,
+                      ignore_errors=True)
+    print("PASS  test artifacts cleaned up (star history stays demo-clean)")
+
 
 if __name__ == "__main__":
     main()

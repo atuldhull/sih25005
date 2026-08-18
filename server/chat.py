@@ -198,6 +198,7 @@ def _ask_llm(context_text: str, message: str, lang: str) -> tuple[str | None, st
     try:
         r = httpx.post(f"{OLLAMA_URL}/api/chat", timeout=OLLAMA_TIMEOUT, json={
             "model": CHAT_MODEL, "stream": False,
+            "keep_alive": "4h",   # never pay a cold reload mid-demo
             "options": {"temperature": 0.3},
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
