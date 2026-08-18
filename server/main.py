@@ -33,8 +33,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 # cheap insurance against quota-burn/CPU loops from strangers on the
 # network: per-IP sliding-window limits on the expensive endpoints.
 # Generous enough that no honest demo ever hits them.
+# /session is generous on purpose: flushing an offline queue of a dozen
+# captured animals in one go is a DEMO FEATURE and must never trip it.
+# The real disk protection is the 411/413 body caps, not this.
 _RATE_LIMITS = {"/chat": (20, 60.0), "/chat/voice": (6, 60.0),
-                "/transcribe": (10, 60.0), "/session": (10, 60.0)}
+                "/transcribe": (10, 60.0), "/session": (40, 60.0)}
 _rate_lock = threading.Lock()
 _rate_hits: dict = defaultdict(deque)
 

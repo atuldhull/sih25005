@@ -38,7 +38,10 @@
     "response_on_retry": "same object with extra field duplicate:true - the app treats it as success and marks the queued session synced",
     "error_404": { "detail": "animal not found in BPA records" },
     "error_422": { "detail": "animal not eligible: not in first lactation (currently lactation 2)" },
-    "error_413": { "detail": "side file too large - max 10 MB. Use a smaller photo / record a shorter clip (~8 s).", "_note": "caps: photos 10 MB each, video 25 MB, whole request 50 MB - compress/re-encode before upload and show the detail string to the user on 413" }
+    "error_413": { "detail": "side file too large - max 10 MB. Use a smaller photo / record a shorter clip (~8 s).", "_note": "caps: photos 10 MB each, video 25 MB, whole request 50 MB - compress/re-encode before upload and show the detail string to the user on 413" },
+    "error_411": { "detail": "length required - streamed uploads are not accepted", "_note": "the request MUST carry a Content-Length header. Flutter's http.MultipartRequest (package:http) sets it automatically, so the normal app path is fine - just do not send a chunked/streamed body with contentLength -1" },
+    "error_429": { "detail": "too many requests from this device - please wait a minute", "_note": "/session allows 40 uploads per minute per device IP - an offline-queue flush of a dozen sessions is well inside it. If you ever see 429, back off ~5 s and retry with the SAME device_session_id (nothing was stored)" },
+    "error_503": { "detail": "database unavailable - restart MongoDB (run_server.bat starts it)", "_note": "server-side outage, not the app's fault - keep the session queued and retry" }
   },
 
   "GET /session/{session_id}": {

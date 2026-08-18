@@ -72,13 +72,52 @@ def main():
     print(f"PASS  overlay rendered for '{scored_trait['name']}' "
           f"({len(r6.content)} bytes, cached on repeat)")
 
-    # clean up at the END too: this session belongs to the DEMO STAR,
-    # and a leftover test row would show in the on-stage history tab
+    # a streamed body with no Content-Length is refused BEFORE anything
+    # is spooled to disk. The app's http.MultipartRequest always sets
+    # Content-Length (proven by every other request in this file), so
+    # this only blocks the unbounded-stream case.
+    def _stream():
+        yield b"x" * 4096
+
+    r7 = client.post("/session", content=_stream(),
+                     headers={"Content-Type":
+                              "multipart/form-data; boundary=zz"})
+    assert r7.status_code == 411, f"{r7.status_code}: {r7.text[:200]}"
+    assert not (Path(OVERLAY_DIR).parent / "uploads" / "zz").exists()
+    print("PASS  streamed upload without Content-Length -> 411")
+
+    # a refused oversized upload must leave NO orphan upload folder
+    big = {"side_photo": ("side.jpg", b"x" * (10 * 1024 * 1024 + 1),
+                          "image/jpeg"),
+           "rear_photo": ("rear.jpg", FAKE_JPG, "image/jpeg")}
+    r8 = client.post("/session", data={"animal_id": ELIGIBLE,
+                                       "device_session_id": "test-orphan"},
+                     files=big)
+    assert r8.status_code == 413, r8.status_code
+    assert not (Path(OVERLAY_DIR).parent / "uploads" / "test-orphan").exists(), \
+        "413 left an orphan upload directory behind"
+    print("PASS  oversized upload -> 413 with no orphan folder")
+
+    # offline-queue flush: uploading a dozen queued sessions back to
+    # back is a DEMO FEATURE - the rate limiter must not trip
+    codes = []
+    for i in range(15):
+        rf = client.post("/session",
+                         data={"animal_id": ELIGIBLE,
+                               "device_session_id": f"test-session-flush-{i}"},
+                         files=files())
+        codes.append(rf.status_code)
+    assert all(c == 200 for c in codes), f"flush blocked: {codes}"
+    print(f"PASS  offline-queue flush: {len(codes)} back-to-back uploads, "
+          "no rate-limit refusals")
+
+    # clean up at the END too: these sessions belong to the DEMO STAR,
+    # and leftover test rows would show in the on-stage history tab
     db.sessions.delete_many({"session_id": {"$regex": "^test-session-"}})
-    for sid in ("test-session-001", "test-session-002"):
-        shutil.rmtree(Path(OVERLAY_DIR) / sid, ignore_errors=True)
-        shutil.rmtree(Path(OVERLAY_DIR).parent / "uploads" / sid,
-                      ignore_errors=True)
+    uploads = Path(OVERLAY_DIR).parent / "uploads"
+    for base in (Path(OVERLAY_DIR), uploads):
+        for p in base.glob("test-*"):
+            shutil.rmtree(p, ignore_errors=True)
     print("PASS  test artifacts cleaned up (star history stays demo-clean)")
 
 
