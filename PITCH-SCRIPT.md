@@ -92,7 +92,7 @@ produce the twenty scores, one to nine — each with a confidence value,
 and each with its **evidence drawn on the photo**. Tap "rump angle,
 score seven" — you see the measured angle on the animal. No black box.
 
-Our whole stack — Flutter, FastAPI, RT-DETR, RTMPose — is free and
+Our whole stack — Flutter, FastAPI, RT-DETR, HRNet-W32, SAM2 — is free and
 **licence-safe for government deployment**. Zero AGPL anywhere.
 
 *(Slide 4)*
@@ -110,10 +110,14 @@ would rather show you the risk table ourselves than have you find it.
   is closer to a six than to a two — plain classification can't see
   that. The one commercial system that matched human experts used
   ordinal regression too."
-- **"What if the tag is at a bad angle or dirty?"** → "solvePnP on a
-  flat plane is mathematically exact for pose; the 27-mm button is our
-  cross-check; every centimetre value carries a confidence interval.
-  And the angle-based traits need no ruler at all — they ship first."
+- **"What if the tag is at a bad angle or dirty?"** → "We measure the
+  tag's PRINTED rows, whose heights are published — 10 mm for the
+  barcode, 18 mm for the digits — and glyph height survives a tag turned
+  away from the camera where width does not. The 27-mm button is the
+  cross-check. Every centimetre value carries a confidence interval that
+  includes the ruler's own error. And if the tag is unreadable we refuse
+  the centimetre traits rather than guess — the angle-based traits need
+  no ruler at all, and they ship first."
 - **"Training data?"** → "AP-10K gives us pre-trained animal pose across
   54 species; we fine-tune with a few hundred annotated Indian images;
   and CowDatabase — 103 cattle with tape-measured ground truth — lets us

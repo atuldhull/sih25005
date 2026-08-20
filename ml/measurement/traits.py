@@ -140,6 +140,43 @@ def _ratio_uncertainty(points: List[Keypoint], scale_px: float,
 
 
 
+# A centimetre value's error is dominated by the SCALE, not by the keypoints.
+# The tag ruler reports its own error fraction - 4% for the 27 mm button, 5.6%
+# for the printed digit rows, more when a scale has been carried across from a
+# close-up - and every distance measured with it inherits that proportionally.
+#
+# Default when a caller does not say: the digit-row floor, which is the looser
+# of the two direct methods. Assuming the tighter one would understate every
+# interval that follows.
+DEFAULT_SCALE_ERROR_FRAC = 0.056
+
+
+def _distance_uncertainty(points: List[Keypoint], scale_px: float,
+                          value: Optional[float],
+                          scale_error_frac: float) -> Optional[float]:
+    """How far a scaled distance could be out, in its own centimetres.
+
+    Two independent contributions: the scale, which is proportional to the
+    value, and the two keypoints, which is a fixed number of pixels turned
+    into centimetres. On a long distance the scale dominates; on a short one -
+    a teat, a cleft - the keypoints do.
+    """
+    if value is None or scale_px <= 0:
+        return None
+    pts = _reduce_points(points)
+    if len(pts) < 2:
+        return None
+    d_px = min(_pixel_distance(pts[i], pts[i + 1])
+               for i in range(len(pts) - 1))
+    if d_px <= 0:
+        return None
+    err_px = KEYPOINT_ERR_FRAC * scale_px * math.sqrt(2.0)
+    from_keypoints = abs(value) * (err_px / d_px)
+    from_scale = abs(value) * abs(scale_error_frac)
+    return math.sqrt(from_keypoints ** 2 + from_scale ** 2)
+
+
+
 def _pixel_distance(a: Keypoint, b: Keypoint) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
@@ -309,6 +346,7 @@ def measure_trait(
     keypoints: Dict[str, Tuple[float, float, float]],
     scale_factor: Optional[float] = None,
     scale_confidence: float = 1.0,
+    scale_error_frac: float = DEFAULT_SCALE_ERROR_FRAC,
 ) -> MeasurementResult:
     """Measure a single trait from keypoints per its registry definition.
 
@@ -414,6 +452,10 @@ def measure_trait(
         else:
             value = _compute_distance(points, scale_factor)
 
+    if trait_class == "C" and value is not None:
+        uncertainty = _distance_uncertainty(
+            points, _animal_scale(keypoints), value, scale_error_frac)
+
     if value is None:
         return MeasurementResult(
             trait_id=trait_id,
@@ -458,10 +500,12 @@ def measure_all_traits(
     scale_factor: Optional[float] = None,
     species: str = "cattle",
     scale_confidence: float = 1.0,
+    scale_error_frac: float = DEFAULT_SCALE_ERROR_FRAC,
 ) -> List[MeasurementResult]:
     """Measure every trait registered for the given species and return all results."""
     matching = [t["trait_id"] for t in TRAIT_REGISTRY if species in t["species_variants"]]
     return [
-        measure_trait(trait_id, keypoints, scale_factor, scale_confidence)
+        measure_trait(trait_id, keypoints, scale_factor, scale_confidence,
+                      scale_error_frac)
         for trait_id in matching
     ]

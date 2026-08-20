@@ -165,3 +165,60 @@ def test_a_scored_trait_carries_no_reason():
     r = score_trait(_measurement("foot_angle", 52.0, 1.0), "cattle")
     assert r.score_1_9 is not None
     assert r.not_scored_reason is None
+
+
+# --- centimetres ----------------------------------------------------------
+# A scaled distance's error is dominated by the SCALE, not by the keypoints.
+# The tag ruler reports its own error fraction - 4% for the 27 mm button, 5.6%
+# for the printed digit rows, more when a scale has been carried across from a
+# close-up - and every centimetre measured with it inherits that
+# proportionally. The pitch says every centimetre value carries a confidence
+# interval; before this it was the centimetre values that had none.
+
+def _cm(scale_error, sep_px=400.0, cm_per_px=0.25):
+    from ml.measurement.traits import measure_trait
+    kps = {"withers": (500.0, 100.0, 0.9),
+           "hoof_left": (500.0, 100.0 + sep_px, 0.9),
+           "tail_head": (1400.0, 120.0, 0.9)}
+    return measure_trait("stature", kps, scale_factor=cm_per_px,
+                         scale_error_frac=scale_error)
+
+
+def test_a_centimetre_value_carries_an_interval():
+    m = _cm(0.056)
+    assert m.value is not None
+    assert m.uncertainty is not None and m.uncertainty > 0
+
+
+def test_a_worse_scale_gives_a_wider_interval():
+    """The whole reason the ruler reports an error fraction at all."""
+    tight = _cm(0.04)          # the 27 mm button
+    loose = _cm(0.15)          # a scale carried across from a close-up
+    assert loose.uncertainty > tight.uncertainty
+
+
+def test_the_scale_error_is_proportional_to_the_value():
+    """A 5.6% scale error is 5.6% of whatever is measured, so a long distance
+    inherits more centimetres of error than a short one."""
+    short = _cm(0.10, sep_px=100.0)
+    long = _cm(0.10, sep_px=800.0)
+    assert long.uncertainty > short.uncertainty * 3
+
+
+def test_a_short_distance_is_dominated_by_the_keypoints_not_the_scale():
+    """A teat is a few centimetres long. Its scale error is negligible in
+    absolute terms while its keypoint error is not, and an interval that only
+    counted the scale would look far too tight."""
+    m = _cm(0.056, sep_px=30.0)
+    scale_only = abs(m.value) * 0.056
+    assert m.uncertainty > scale_only * 2, (
+        f"interval {m.uncertainty:.3f} barely exceeds the scale term "
+        f"{scale_only:.3f} - the keypoint contribution is missing")
+
+
+def test_an_unmeasured_distance_has_no_interval():
+    from ml.measurement.traits import measure_trait
+    m = measure_trait("stature", {"withers": (1.0, 2.0, 0.9)},
+                      scale_factor=0.25)
+    assert m.value is None
+    assert m.uncertainty is None
