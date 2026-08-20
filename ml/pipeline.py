@@ -17,6 +17,7 @@ from ml.pose_features.embedding_extractor import (
     to_contract_fields,
     verify_breed,
 )
+from ml.pose_features.silhouette_landmarks import add_derived_landmarks
 from ml.pose_features.pose_extractor import (
     PoseBackendError,
     extract_keypoints,
@@ -157,11 +158,28 @@ def score_animal(
     # refuses those traits rather than guessing them.
     keypoints = None
     pose_reason = None
+    derived_joints = {}
     try:
         keypoints = extract_keypoints(side_img, animal_bbox)
         if usable_joint_count(keypoints) == 0:
             keypoints = None
             pose_reason = "pose_no_usable_joints"
+        else:
+            # Some canonical joints were never annotated, so the model cannot
+            # detect them. chest_bottom - the brisket - is the costly one: it
+            # gates body_depth, chest_depth and chest_width_to_depth_ratio.
+            # It is derivable from the silhouette, because on a side view it
+            # is simply where the body ends and only legs continue below.
+            # Derivation refuses on a weak pose or an implausible result
+            # rather than guessing, and every derived point is marked.
+            try:
+                from ml.detection.detector import segment_animal
+                mask, degraded = segment_animal(side_img, animal_bbox)
+                if not degraded:
+                    keypoints, derived_joints = add_derived_landmarks(
+                        keypoints, mask, animal_bbox)
+            except Exception:
+                pass          # segmentation is a bonus, never a blocker
     except PoseBackendError as exc:
         pose_reason = f"pose_unavailable: {exc}"
 
