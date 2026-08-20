@@ -136,6 +136,8 @@ class TestMeasurementInterop:
             "rear_hip_bone_right": (590, 180, 0.95),
             "rear_hock_left": (480, 500, 0.95),
             "rear_hock_right": (560, 500, 0.95),
+            "rear_hoof_left": (500, 585, 0.95),
+            "rear_hoof_right": (580, 585, 0.95),
         })
         measurements = measure_all_traits(normalized, 0.05, "cattle", 0.9)
         assert sum(1 for m in measurements if m.value is not None) == 20

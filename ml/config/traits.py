@@ -513,7 +513,19 @@ INTERNAL_EXTRA_TRAITS = [
         "trait_id": "udder_depth_ratio",
         "name": "Udder Depth Ratio",
         "trait_class": "B",
-        "required_keypoints": ["rear_udder", "hock_left", "hock_right", "hoof_right"],
+        # Entirely in the REAR frame. rear_udder is merged from the rear
+        # photograph; hock_left and hoof_right were not, so the ratio's
+        # numerator and denominator were measured in two different
+        # photographs taken from two different distances. Same defect as
+        # udder_depth, found by the same audit.
+        #
+        # The ratio is udder-to-hock over hock-to-hoof, both on the SAME side
+        # and both in the rear view: how far the udder hangs relative to the
+        # length of the lower leg beneath it. Dimensionless, so it needs no
+        # scale. rear_hock_left appears twice on purpose - it is the end of
+        # the first distance and the start of the second.
+        "required_keypoints": ["rear_udder", "rear_hock_left",
+                               "rear_hock_left", "rear_hoof_left"],
         "required_scale": False,
         "unit": "ratio",
         "smal_fallback": True,

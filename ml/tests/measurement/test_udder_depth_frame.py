@@ -105,6 +105,8 @@ def test_every_left_right_pair_a_rear_trait_needs_is_aliased():
         "hip_bone_right": "rear_hip_bone_right",
         "hook_left": "rear_hook_left",
         "hook_right": "rear_hook_right",
+        "hoof_left": "rear_hoof_left",
+        "hoof_right": "rear_hoof_right",
     }
 
 

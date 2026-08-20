@@ -62,6 +62,7 @@ VIEW_SCOPED_ALIASES = {
     "rear_hock_left", "rear_hock_right",
     "rear_hip_bone_left", "rear_hip_bone_right",
     "rear_hook_left", "rear_hook_right",
+    "rear_hoof_left", "rear_hoof_right",
 }
 
 
