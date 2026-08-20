@@ -1,9 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'screens/capture/scan_tag_screen.dart';
+import 'screens/records/records_screen.dart';
+import 'services/sync_service.dart';
+import 'widgets/sync_status_badge.dart';
 
 void main() {
   runApp(const PashuScorerApp());
+  // Start the global sync service without blocking app rendering.
+  // Safe even if the backend is offline or SQLite is empty.
+  unawaited(SyncService.instance.start());
 }
 
 class PashuScorerApp extends StatelessWidget {
@@ -33,18 +41,28 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
-  final List<Widget> _screens = const [
-    ScanTagScreen(),
-
-    Center(
-      child: Text(
-        'Records\nComing soon',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 20),
-      ),
+  late final List<Widget> _screens = [
+    // Scan tab: sync status badge above the existing capture UI.
+    const Column(
+      children: [
+        SyncStatusBadge(),
+        Expanded(child: ScanTagScreen()),
+      ],
     ),
 
-    Center(
+    RecordsScreen(
+      // "Start New Scoring Session" on an animal profile returns the user
+      // to the Day 2 capture flow (Scan tab). The tag ID cannot be
+      // pre-filled without modifying the protected ScanTagScreen, so the
+      // user re-enters it during capture.
+      onStartScoring: () {
+        setState(() {
+          _selectedIndex = 0;
+        });
+      },
+    ),
+
+    const Center(
       child: Text(
         'Settings\nComing soon',
         textAlign: TextAlign.center,

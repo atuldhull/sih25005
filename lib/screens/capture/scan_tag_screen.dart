@@ -1,4 +1,12 @@
+import 'dart:io';
+
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+
+import '../../models/capture_session.dart';
+import '../../services/demo_camera_config.dart';
+import '../../services/demo_media_service.dart';
+import 'side_photo_screen.dart';
 
 class ScanTagScreen extends StatefulWidget {
   const ScanTagScreen({super.key});
@@ -11,27 +19,99 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   bool _isInitializing = true;
   bool _isCapturing = false;
 
-  // Demo image state
   bool _isCaptured = false;
+  CameraController? _controller;
+  String? _capturedTagImagePath;
+  String? _cameraError;
+
+  /// Demo-mode live preview asset (resolved once at startup).
+  String? _demoPreviewAsset;
 
   final TextEditingController _tagController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-
-    // Simulate loading the camera/demo capture screen.
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (!mounted) return;
-
-      setState(() {
-        _isInitializing = false;
-      });
-    });
+    _initializeCamera();
   }
 
   // ------------------------------------------------------------
-  // CAPTURE DEMO IMAGE
+  // INITIALIZE CAMERA
+  // ------------------------------------------------------------
+
+  Future<void> _initializeCamera() async {
+    // DEMO MODE: no real camera is initialized. The realistic cow image is
+    // shown behind the existing ear-tag guide.
+    if (DemoCameraConfig.enabled) {
+      final asset = await DemoMediaService.resolveImageAsset(
+        DemoMediaKind.earTag,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _demoPreviewAsset = asset;
+        _cameraError = null;
+        _isInitializing = false;
+      });
+      return;
+    }
+
+    try {
+      final cameras = await availableCameras();
+
+      if (cameras.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _cameraError = 'No camera was found on this device.';
+            _isInitializing = false;
+          });
+        }
+        return;
+      }
+
+      final camera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      final controller = CameraController(
+        camera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+
+      await controller.initialize();
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      _controller = controller;
+      setState(() {
+        _cameraError = null;
+        _isInitializing = false;
+      });
+    } on CameraException catch (e) {
+      if (mounted) {
+        setState(() {
+          _cameraError = _cameraMessage(e);
+          _isInitializing = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _cameraError = 'Unable to initialize the camera.';
+          _isInitializing = false;
+        });
+      }
+    }
+  }
+
+  // ------------------------------------------------------------
+  // CAPTURE EAR TAG IMAGE
   // ------------------------------------------------------------
 
   Future<void> _captureTagImage() async {
@@ -39,29 +119,91 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
       return;
     }
 
+    // DEMO MODE: copy the bundled cow/tag image into a real temp file so the
+    // existing captured-preview and retake-cleanup flow works unchanged.
+    if (DemoCameraConfig.enabled) {
+      setState(() {
+        _isCapturing = true;
+      });
+
+      try {
+        final result = await DemoMediaService.captureImage(
+          DemoMediaKind.earTag,
+        );
+
+        if (!mounted) return;
+
+        setState(() {
+          _capturedTagImagePath = result.filePath;
+          _isCaptured = true;
+          _isCapturing = false;
+        });
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _isCapturing = false;
+          });
+
+          _showCameraError('Unable to capture the ear tag image.');
+        }
+      }
+      return;
+    }
+
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      _showCameraError('Camera is not ready yet.');
+      return;
+    }
+
     setState(() {
       _isCapturing = true;
     });
 
-    // Simulate a real camera capture.
-    await Future.delayed(const Duration(milliseconds: 700));
+    try {
+      final photo = await controller.takePicture();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      _isCaptured = true;
-      _isCapturing = false;
-    });
+      setState(() {
+        _capturedTagImagePath = photo.path;
+        _isCaptured = true;
+        _isCapturing = false;
+      });
+    } on CameraException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isCapturing = false;
+        });
+
+        _showCameraError(_cameraMessage(e));
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isCapturing = false;
+        });
+
+        _showCameraError('Unable to capture the ear tag image.');
+      }
+    }
   }
 
   // ------------------------------------------------------------
   // RETAKE IMAGE
   // ------------------------------------------------------------
 
-  void _retakeImage() {
+  Future<void> _retakeImage() async {
+    final oldPath = _capturedTagImagePath;
+
     setState(() {
       _isCaptured = false;
+      _capturedTagImagePath = null;
     });
+
+    if (oldPath != null) {
+      await _deleteTemporaryFile(oldPath);
+    }
   }
 
   // ------------------------------------------------------------
@@ -135,11 +277,12 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   // ------------------------------------------------------------
 
   void _goToNextStep(String animalId) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Ear tag $animalId confirmed successfully.')),
-    );
+    final session = CaptureSession(tagId: animalId);
 
-    // Step 1.8 will connect the next capture screen here.
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => SidePhotoScreen(session: session)),
+    );
   }
 
   // ------------------------------------------------------------
@@ -149,6 +292,7 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   @override
   void dispose() {
     _tagController.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -164,11 +308,7 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                Expanded(
-                  child: _isCaptured
-                      ? _buildCapturedImagePreview()
-                      : _buildDemoCowPreview(),
-                ),
+                Expanded(child: _buildPreview()),
 
                 Padding(
                   padding: const EdgeInsets.all(20),
@@ -182,14 +322,78 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   }
 
   // ------------------------------------------------------------
-  // DEMO COW IMAGE
+  // CAMERA / CAPTURED PREVIEW
   // ------------------------------------------------------------
 
-  Widget _buildDemoCowPreview() {
+  Widget _buildPreview() {
+    if (_cameraError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _cameraError!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 18),
+          ),
+        ),
+      );
+    }
+
+    if (_isCaptured) {
+      return _buildCapturedImagePreview();
+    }
+
+    // DEMO MODE: realistic cow image behind the existing ear-tag guide.
+    if (DemoCameraConfig.enabled) {
+      final asset = _demoPreviewAsset;
+      if (asset == null) {
+        return const Center(child: CircularProgressIndicator());
+      }
+
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(asset, fit: BoxFit.cover),
+
+          // Slight dark overlay
+          Container(color: Colors.black.withValues(alpha: 0.15)),
+
+          // Ear-tag guide box
+          Center(
+            child: Container(
+              width: 280,
+              height: 180,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 3),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Center(
+                child: Text(
+                  'Place ear tag here',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    shadows: [Shadow(color: Colors.black, blurRadius: 6)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset('assets/demo/cow_ear_tag.png', fit: BoxFit.cover),
+        CameraPreview(controller),
 
         // Slight dark overlay
         Container(color: Colors.black.withValues(alpha: 0.15)),
@@ -226,10 +430,15 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   // ------------------------------------------------------------
 
   Widget _buildCapturedImagePreview() {
+    final path = _capturedTagImagePath;
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset('assets/demo/cow_ear_tag.png', fit: BoxFit.cover),
+        if (path != null)
+          Image.file(File(path), fit: BoxFit.cover)
+        else
+          const ColoredBox(color: Colors.black),
 
         Container(color: Colors.black.withValues(alpha: 0.12)),
 
@@ -299,6 +508,43 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
         icon: const Icon(Icons.camera_alt),
         label: Text(_isCapturing ? 'Capturing...' : 'Capture Ear Tag'),
       ),
+    );
+  }
+
+  Future<void> _deleteTemporaryFile(String path) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // Temporary cleanup failure should not block a retake.
+    }
+  }
+
+  String _cameraMessage(CameraException e) {
+    if (e.code.toLowerCase().contains('permission')) {
+      return 'Camera permission is required to capture the ear tag.';
+    }
+
+    return 'Unable to use the camera. Please check permissions and try again.';
+  }
+
+  void _showCameraError(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Camera Error'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
     );
   }
 

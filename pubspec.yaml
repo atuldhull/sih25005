@@ -39,3 +39,4 @@ flutter:
 
   assets:
     - assets/demo/cow_ear_tag.png
+    - assets/cow_demo/
