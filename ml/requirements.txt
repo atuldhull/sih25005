@@ -1,0 +1,19 @@
+torch
+torchvision
+opencv-python
+numpy
+Pillow
+
+# RT-DETRv2 detection + DINOv2 embeddings (REVIEW-ml-dev.md Fix #6:
+# 'rtdetr-pytorch' and 'dino-v2' do not exist on PyPI - both are covered by
+# HuggingFace transformers instead).
+transformers
+
+# RTMPose inference (REVIEW-ml-dev.md Fix #6: 'rtmpose' does not exist on
+# PyPI - the real inference package is rtmlib).
+rtmlib
+
+# Ear-tag OCR. paddleocr additionally requires paddlepaddle as a separate
+# install (CPU build shown; swap for paddlepaddle-gpu if training/running on GPU).
+paddleocr
+paddlepaddle

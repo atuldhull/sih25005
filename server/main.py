@@ -300,14 +300,45 @@ def create_session(
         result["breed_registered"] = animal.get("breed")
     if result.get("animal_id") is None:
         result["animal_id"] = animal_id
-    if result.get("breed_verified") is None:
-        result["breed_verified"] = False
-        result["breed_verify_confidence"] = 0.0
+    # captured_at is server-injected: the pipeline honestly does not know
+    # wall-clock time, so it leaves this None and the server fills it.
     if not result.get("captured_at"):
         result["captured_at"] = datetime.now().astimezone().isoformat(
             timespec="seconds")
     if result.get("synced") is None:
         result["synced"] = True
+
+    # BREED VERIFICATION - the one place the two branches genuinely
+    # disagreed, so the reasoning is recorded here rather than resolved
+    # silently.
+    #
+    # ml-dev left breed_verified as None: setting it to anything else is
+    # fabricating a value. The measurements agree. Exact-breed verification
+    # on the data we can legally use scores 38.1% source-held-out, and its
+    # confidence carries no information - tightening the threshold from
+    # 100% to 30% coverage moves accuracy only +5.6 points. The trained
+    # model disables its own breed head for exactly this reason.
+    #
+    # server-dev coerced None to False, because the app's models declare
+    # this field non-nullable and a null is a hard decode failure on the
+    # phone. That constraint is real and the server cannot fix it alone.
+    #
+    # Resolution until Person 1 can accept a null: keep the wire value a
+    # bool so the app cannot crash, and carry the honest state alongside it
+    # in breed_verify_status, which the app may ignore safely.
+    #
+    # False here means NOT VERIFIED. It does not mean "contradicted". The
+    # app must not render it as a breed mismatch - that would accuse a
+    # correctly registered animal on every single record.
+    if result.get("breed_verified") is None:
+        result["breed_verified"] = False
+        result["breed_verify_confidence"] = 0.0
+        result.setdefault("breed_verify_status", "unverified")
+    else:
+        result.setdefault(
+            "breed_verify_status",
+            "agree" if result["breed_verified"] else "disagree")
+
     # pixel coordinates are integers on the wire: the app parses them as
     # ints and a float would be a hard decode failure on the phone
     for t in result.get("traits", []):
@@ -350,10 +381,11 @@ def create_session(
         }, upsert=True)
 
     weight = result.get("weight_kg")
+    # low/high are honestly None when weight could not be measured (Heart
+    # Girth needs a 3D model that does not exist yet). Do not fabricate a
+    # midpoint, and do not crash on None + None.
     weight_mid = None
-    if isinstance(weight, dict) and \
-            isinstance(weight.get("low"), (int, float)) and \
-            isinstance(weight.get("high"), (int, float)):
+    if isinstance(weight, dict) and             isinstance(weight.get("low"), (int, float)) and             isinstance(weight.get("high"), (int, float)):
         weight_mid = (weight["low"] + weight["high"]) // 2
     try:
         db.sessions.insert_one({

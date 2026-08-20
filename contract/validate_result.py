@@ -105,6 +105,26 @@ def validate(result: dict, mode: str = "pipeline") -> list[str]:
         if name not in seen:
             p.append(f"traits: missing NDDB trait '{name}'")
 
+    # Adoption safety gate (pipeline mode only): scoring_loader.py uses this
+    # function's return value to decide whether to adopt the real ML result
+    # over the working baseline engine. A shape-valid result where every
+    # trait's score is null (e.g. pose/tag intelligence not yet implemented)
+    # must NOT pass - otherwise a totally unscored result could silently
+    # replace a working baseline the moment ml.pipeline becomes importable.
+    # This is deliberately checked before any relaxation of weight_kg's
+    # low/high requirement, since that relaxation would otherwise remove the
+    # only thing currently blocking an all-null result from validating.
+    if mode == "pipeline":
+        any_scored = any(
+            isinstance(t, dict) and t.get("score") is not None for t in traits
+        )
+        if not any_scored:
+            p.append(
+                "adoption gate: no trait has a non-null score - a fully "
+                "unscored pipeline result must not be adopted over the "
+                "baseline engine"
+            )
+
     w = result.get("weight_kg")
     if not isinstance(w, dict):
         p.append("'weight_kg' must be an object {low, high, method, ...}")
@@ -114,10 +134,24 @@ def validate(result: dict, mode: str = "pipeline") -> list[str]:
     else:
         if "method" not in w:
             p.append("weight_kg: missing 'method'")
-        for k in ("low", "high"):
-            if not isinstance(w.get(k), (int, float)):
-                p.append(f"weight_kg: '{k}' must be a number (or both null "
-                         f"when unmeasured), got {type(w.get(k)).__name__}")
+        # low/high may be None together - the honest "not measured" state
+        # (e.g. Heart Girth requires a 3D model that doesn't exist yet, see
+        # ml/weight/estimator.py). A fabricated number is worse than an
+        # honest null, so null is valid here - the adoption gate above is
+        # what prevents an all-null *result* from being adopted, not this
+        # field in isolation. What's not valid is exactly one of the two
+        # being null, or either being present but not a number.
+        low, high = w.get("low"), w.get("high")
+        if low is None and high is None:
+            pass  # honest not-measured state
+        elif low is None or high is None:
+            p.append("weight_kg: 'low' and 'high' must both be null "
+                     "(not measured) or both be numbers, not one of each")
+        elif not (isinstance(low, (int, float)) and isinstance(high, (int, float))):
+            for k, v in (("low", low), ("high", high)):
+                if not isinstance(v, (int, float)):
+                    p.append(f"weight_kg: '{k}' must be a number or null, "
+                             f"got {type(v).__name__}")
         if isinstance(w.get("low"), (int, float)) and \
            isinstance(w.get("high"), (int, float)):
             if w["low"] > w["high"]:

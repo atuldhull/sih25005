@@ -1,0 +1,1 @@
+"""Veterinary screening module."""
