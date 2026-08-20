@@ -1,4 +1,4 @@
-﻿"""Detect animals and ear tags using RT-DETRv2 (HuggingFace transformers), with SAM2
+"""Detect animals and ear tags using RT-DETRv2 (HuggingFace transformers), with SAM2
 foreground segmentation.
 
 Inference wiring only - no training code. Loads a fine-tuned checkpoint (exported in
@@ -344,9 +344,12 @@ def load_sam2(device: str = DEFAULT_DEVICE) -> Any:
     if _sam2_predictor is not None:
         return _sam2_predictor
 
-    if not os.path.exists(SAM2_MODEL_PATH) or not os.path.exists(SAM2_CONFIG_PATH):
+    # Only the WEIGHTS live on disk. SAM2_CONFIG_PATH is a Hydra config name
+    # resolved from inside the installed sam2 package, so os.path.exists on it
+    # is always False and would reject a perfectly good install.
+    if not os.path.exists(SAM2_MODEL_PATH):
         raise DetectionBackendError(
-            f"SAM2 weights/config not found: {SAM2_MODEL_PATH} / {SAM2_CONFIG_PATH}. "
+            f"SAM2 weights not found: {SAM2_MODEL_PATH}. "
             "Segmentation will fall back to the RT-DETR box rect."
         )
     try:

@@ -38,6 +38,12 @@ RTDETR_CONFIDENCE_THRESHOLD = 0.5
 EAR_TAG_DECODER_LAYER = 1
 
 SAM2_MODEL_PATH = "models/sam2/sam2_hiera_tiny.pt"
-SAM2_CONFIG_PATH = "models/sam2/sam2_hiera_tiny.yaml"
+# SAM2 resolves its config through Hydra, whose search path includes
+# pkg://sam2 - so this is a config NAME relative to the installed sam2
+# package, NOT a path on disk. Passing a filesystem path fails with
+# "Cannot find primary config", which is why segmentation silently fell back
+# to the bounding-box rectangle and the silhouette was never real.
+SAM2_CONFIG_NAME = "configs/sam2/sam2_hiera_t.yaml"
+SAM2_CONFIG_PATH = SAM2_CONFIG_NAME     # kept for existing imports
 DEFAULT_DEVICE = "auto"
 DEBUG_DIR = "debug/detection"
