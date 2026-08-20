@@ -85,21 +85,51 @@ def main():
     chat.OLLAMA_URL = "http://127.0.0.1:9"
     chat.llm_providers.try_cloud = lambda s, u: (None, None)
     try:
+        # A seeded session carries no engine field, so it is treated as NOT
+        # measured - the cautious default. The baseline engine invents a
+        # weight whenever the ML pipeline cannot score a pair, and quoting
+        # that to a farmer as their animal's weight is the failure this
+        # guards against.
         r = client.post("/chat", json={"animal_id": ELIGIBLE,
                                        "message": "what is her weight?"})
         body = r.json()
         assert body["model"] == "template"
-        # must be HER weight from the record, not the weight-concept
-        # definition from the knowledge corpus
-        assert "kg" in body["answer"] and "session" in body["answer"], body["answer"]
+        assert "demonstration" in body["answer"] or "placeholder" in body["answer"],             body["answer"]
         assert body["sources"] == [], "record answers cite no corpus"
-        print(f"PASS  template weight answer from record: {body['answer'][:60]}...")
+        print("PASS  a demonstration weight is disclosed, not quoted as a fact")
 
-        r2 = client.post("/chat", json={"animal_id": ELIGIBLE,
-                                        "message": "वज़न कितना है?"})
-        assert r2.json()["language"] == "hi"
-        assert "किलो" in r2.json()["answer"]
-        print("PASS  Hindi in -> Hindi out (template)")
+        # and with a session the ML pipeline actually produced, it answers
+        latest = db.sessions.find({"animal_id": ELIGIBLE}).sort(
+            [("date", -1), ("_id", -1)]).limit(1)[0]
+        db.sessions.update_one({"_id": latest["_id"]},
+                               {"$set": {"result.engine": "ml-pipeline"}})
+        try:
+            body = client.post("/chat", json={"animal_id": ELIGIBLE,
+                                              "message": "what is her weight?"}).json()
+            # must be HER weight from the record, not the weight-concept
+            # definition from the knowledge corpus
+            assert "kg" in body["answer"] and "session" in body["answer"], body["answer"]
+            print(f"PASS  a measured weight is answered from the record: "
+                  f"{body['answer'][:56]}...")
+
+            r2 = client.post("/chat", json={"animal_id": ELIGIBLE,
+                                            "message": "वज़न कितना है?"})
+            assert r2.json()["language"] == "hi"
+            assert "किलो" in r2.json()["answer"]
+            print("PASS  Hindi in -> Hindi out (template)")
+        finally:
+            db.sessions.update_one(
+                {"_id": latest["_id"]},
+                {"$set": {"result.engine": latest["result"].get("engine")}}
+                if latest["result"].get("engine") is not None
+                else {"$unset": {"result.engine": ""}})
+
+        # the same question in Hindi on a demonstration session discloses too
+        r2b = client.post("/chat", json={"animal_id": ELIGIBLE,
+                                         "message": "वज़न कितना है?"})
+        assert r2b.json()["language"] == "hi"
+        assert "डेमो" in r2b.json()["answer"], r2b.json()["answer"]
+        print("PASS  a demonstration weight is disclosed in Hindi too")
 
         # Devanagari eligibility question routes to eligibility, not scores
         r3 = client.post("/chat", json={"animal_id": ELIGIBLE,
@@ -132,6 +162,30 @@ def main():
     finally:
         chat.OLLAMA_URL = real_url
         chat.llm_providers.try_cloud = real_cloud
+
+    # ---- what the LLM is allowed to see ---------------------------------
+    # Labelling the placeholder figures inline was not enough. Given "weight
+    # around 418 kg [DEMONSTRATION PLACEHOLDER]" and an instruction not to
+    # quote it, the local 7B model still answered "the weight trend from
+    # 392 kg to 418 kg suggests improvement" - a farmer's animal, invented.
+    # A small model cannot be relied on to withhold a number it can see, so
+    # the figures are withheld from the context entirely.
+    animal = db.animals.find_one({"_id": ELIGIBLE})
+    ctx = chat.build_context(db, animal)
+    text = chat._context_text(ctx)
+    ls = ctx["latest_session"]
+    if ls and not ls.get("measured"):
+        weights = [str(w) for w in ctx["weight_trend"]]
+        if ls.get("weight_kg_mid") is not None:
+            weights.append(str(ls["weight_kg_mid"]))
+        leaked = [w for w in weights if w in text]
+        assert not leaked, (
+            f"placeholder weights {leaked} reached the model's context - it "
+            f"will quote them as this animal's measurements")
+        assert "DEMONSTRATION" in text.upper()
+        print("PASS  demonstration figures never reach the model's context")
+    else:
+        print("SKIP  latest seeded session is marked measured")
 
     # live path only when the daemon is up AND the model is pulled
     live = False

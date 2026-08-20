@@ -123,6 +123,12 @@ def build_context(db, animal: dict) -> dict:
         "session_count": len(sessions),
         "latest_session": None if latest is None else {
             "date": latest["date"],
+            # Which engine produced this session. The baseline engine invents
+            # all twenty scores and a weight when the ML pipeline cannot score
+            # a pair, and it answers on roughly two thirds of sessions today.
+            # Without this, the chat quotes those invented figures to a farmer
+            # as measurements of their own animal.
+            "measured": str(latest["result"].get("engine", "")).startswith("ml"),
             "weight_kg_mid": latest.get("weight_kg_mid"),
             "health_flags": latest.get("health_flags", []),
             "risks": risks,
@@ -146,12 +152,28 @@ def _context_text(ctx: dict) -> str:
     ]
     ls = ctx["latest_session"]
     if ls:
-        lines.append(f"Latest session {ls['date']}: {ls['traits_scored']}/20 traits "
-                     f"scored, weight around {ls['weight_kg_mid']} kg, "
-                     f"health flags: {', '.join(ls['health_flags']) or 'none'}.")
+        if ls.get("measured"):
+            lines.append(
+                f"Latest session {ls['date']}: {ls['traits_scored']}/20 traits "
+                f"scored, weight around {ls['weight_kg_mid']} kg, "
+                f"health flags: {', '.join(ls['health_flags']) or 'none'}.")
+        else:
+            # The figures are WITHHELD, not merely labelled. Marking them
+            # inline was not enough: given "weight around 418 kg
+            # [DEMONSTRATION PLACEHOLDER]" and an instruction not to quote it,
+            # the local 7B model still answered "the weight trend from 392 kg
+            # to 418 kg suggests improvement". A small model cannot be relied
+            # on to withhold a number it can see, so it does not see it.
+            lines.append(
+                f"Latest session {ls['date']}: ran on the DEMONSTRATION "
+                f"engine, so it produced no real measurement of this animal. "
+                f"Its scores and weight are withheld here because they are "
+                f"placeholders. Say that a real scoring session is needed, "
+                f"with the ear tag clearly photographed, and do not invent or "
+                f"estimate a weight.")
         for r in ls["risks"]:
             lines.append(f"Screening risk: {r['label']} ({r['risk']}).")
-    if len(ctx["weight_trend"]) >= 2:
+    if len(ctx["weight_trend"]) >= 2 and ls and ls.get("measured"):
         lines.append(f"Weight trend (oldest to newest): "
                      f"{' -> '.join(str(w) for w in ctx['weight_trend'])} kg.")
     for c in ctx["care_advice"]:
@@ -236,6 +258,13 @@ def _template_answer(ctx: dict, message: str, lang: str) -> str | None:
                     f"Weight could not be measured in the last session "
                     f"({ls['date']}). Retake the photos with the ear tag "
                     "clearly visible.")
+        if ls and ls.get("weight_kg_mid") and not ls.get("measured"):
+            return ("पिछला सत्र डेमो इंजन पर चला था, इसलिए वह वज़न असली माप नहीं है। "
+                    "कान का टैग साफ दिखे ऐसी फोटो के साथ दोबारा सत्र करें।" if hi else
+                    "The last session ran on the demonstration engine, so that "
+                    "weight is a placeholder rather than a measurement of your "
+                    "animal. Run a session with the ear tag clearly "
+                    "photographed to get a real one.")
         if ls and ls.get("weight_kg_mid"):
             trend = ctx["weight_trend"]
             direction = ""
