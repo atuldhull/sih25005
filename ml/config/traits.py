@@ -40,10 +40,21 @@ CONTRACT_TRAITS = [
         "required_scale": True,
         "unit": "cm",
         "smal_fallback": True,
-        # NOTE: 2D chest-depth is NOT true girth circumference (Fix #3 in REVIEW-ml-dev.md).
-        # This trait must be scored from the SMAL mesh fit, or marked not_measurable
-        # until a SMAL fit is available. Do not feed the raw 2D distance into Schaeffer's
-        # formula directly - see weight/estimator.py fix.
+        # NOTE: 2D chest-depth is NOT true girth circumference (Fix #3 in
+        # REVIEW-ml-dev.md). Do not feed the raw 2D distance into Schaeffer's
+        # formula - that was a real bug, and refusing was the right answer to it.
+        #
+        # It is now answered without a SMAL mesh, by the route that note was
+        # really asking for. ml/weight/volume_3d.py builds the chest station as
+        # a CLOSED cross-section from both photographs - depth from the side,
+        # width from the rear - so its perimeter is a circumference rather than
+        # a chord. The pipeline substitutes that measurement (see
+        # _with_heart_girth) whenever a scale is available, carrying an
+        # uncertainty for the elliptical assumption and the tag scale.
+        #
+        # trait_class stays SMAL here because that is what it is WITHOUT the
+        # substitution: with no rear silhouette or no scale, this trait still
+        # refuses, and the definition has to describe that case.
         "species_variants": ["cattle", "buffalo"],
     },
     {

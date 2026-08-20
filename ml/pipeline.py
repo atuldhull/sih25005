@@ -33,10 +33,44 @@ from ml.vet_screening.vet_screener import (
     symptom_vector_or_empty,
 )
 from ml.scoring.scorer import scoreability, determine_status, score_all_traits
-from ml.common.schemas import WeightResult
+from ml.common.schemas import MeasurementResult, WeightResult
 from ml.weight.estimator import estimate_weight
 
 KEYPOINT_CONFIDENCE_MIN = 0.3
+
+
+
+# Heart girth is the circumference of the chest behind the fore leg. It was
+# classed SMAL and refused because a flat 2D chord is NOT a circumference -
+# feeding chest depth straight into Schaeffer's formula was a real bug once,
+# and the trait was correctly disabled rather than allowed to lie.
+#
+# The ellipse model answers it without a SMAL mesh, by the route that note was
+# really asking for: the chest station is a CLOSED cross-section built from
+# both photographs - depth from the side, width from the rear - so its
+# perimeter is a circumference rather than a chord. It is an approximation of
+# a real chest, which is flatter over the back than an ellipse, and that is
+# what the uncertainty below is for.
+HEART_GIRTH_MODEL_ERROR = 0.10      # the elliptical cross-section assumption
+HEART_GIRTH_SCALE_ERROR = 0.04      # tag scale, per TAG_SCALE_MIN_ERROR_FRAC
+
+
+def _with_heart_girth(measurements, vol):
+    """Replace the SMAL refusal for heart_girth with the ellipse measurement."""
+    import math
+    girth = float(vol.heart_girth_cm)
+    rel = math.sqrt(HEART_GIRTH_MODEL_ERROR ** 2 + HEART_GIRTH_SCALE_ERROR ** 2)
+    replacement = MeasurementResult(
+        trait_id="heart_girth",
+        trait_class="C",          # a scaled distance now, no longer SMAL
+        value=girth,
+        unit="cm",
+        confidence=0.5,
+        flags=[],
+        uncertainty=girth * rel,
+    )
+    return [replacement if m.trait_id == "heart_girth" else m
+            for m in measurements]
 
 
 def score_animal(
@@ -311,6 +345,9 @@ def score_animal(
             vol = estimate_volume(
                 side_mask, rear_mask, keypoints,
                 cm_per_px=scale_factor, belly_y=belly_y)
+            if vol.heart_girth_cm is not None:
+                measurements = _with_heart_girth(measurements, vol)
+                scores = score_all_traits(measurements, species)
             if vol.measured:
                 weight_result = WeightResult(
                     estimate_kg=0.5 * (vol.low_kg + vol.high_kg),
