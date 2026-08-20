@@ -103,7 +103,40 @@ From the tested web panel, if it helps to reuse:
 - `group_reliable == false` → *"below this group's own reliability bar, treat as
   a hint"*
 
-## 5. Two smaller things
+## 5. The one change that would matter most: send the tag close-up
+
+`ScanTagScreen` already captures the ear tag, but the app uploads only the tag
+NUMBER. If it also uploaded the photograph, the server now accepts it:
+
+```dart
+request.files.add(
+  await http.MultipartFile.fromPath('tag_photo', tagPhotoPath));
+```
+
+`tag_photo` or `tag_image`, either name, optional, same 10 MB cap as the other
+photos. Nothing breaks without it.
+
+**What it changes.** Everything measured in centimetres — five of the twenty
+traits, heart girth, and the weight — needs a real scale, and the only object
+of known size in the frame is the tag. In the side photograph the tag is a
+thumbnail and the detector frequently does not find it at all. In a close-up
+it fills the frame, needs no detector, and its printed 18 mm digit row gives a
+scale directly; the server then carries that scale to the side photograph
+using the tag itself as a bridge.
+
+Measured on a real pair, the same session posted twice:
+
+| | engine used | weight |
+|---|---|---|
+| without `tag_photo` | `baseline` — every score a placeholder | invented |
+| with `tag_photo` | **`ml-pipeline`** — real measurement | measured |
+
+That is the difference between the demo showing demonstration data and showing
+a measurement. The close-up needs to be of an **NDDB-spec** tag — barcode row,
+two digit rows, or the round button — because those are the features of known
+size. A handwritten management tag will be refused, with a reason.
+
+## 6. Two smaller things
 
 **Quality.** `quality_passed` can now be `false` on a session that still scored.
 Blur was measured against what it actually costs: out to a heavy blur the pose

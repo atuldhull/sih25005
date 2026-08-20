@@ -242,6 +242,21 @@ def create_session(
     # IS the _id in the BPA records, so this is an alias, not a guess.
     tag_id: str = Form(None),
     video: UploadFile = File(None),
+    # The close-up of the ear tag. Optional, and absent from the app today -
+    # ScanTagScreen captures the tag NUMBER, not a photograph of it.
+    #
+    # It is accepted here because everything measured in centimetres depends
+    # on it. In the side photograph the tag is a thumbnail and the detector
+    # frequently does not find it at all; in a close-up the tag fills the
+    # frame, no detector is needed, and the printed 18 mm digit row gives a
+    # scale directly. ml/tag_intelligence/panel_transfer.py then carries that
+    # scale to the side photograph using the tag as a bridge.
+    #
+    # Without it: the class-C traits, heart girth and the weight all refuse,
+    # honestly, and the angle traits still work. With it they become
+    # measurable. Both names are accepted so the app can use either.
+    tag_photo: UploadFile = File(None),
+    tag_image: UploadFile = File(None),
 ):
     # sync on purpose: FastAPI runs sync handlers in a threadpool, so
     # when the real ML pipeline (seconds of CPU) replaces the fake
@@ -304,11 +319,12 @@ def create_session(
 
     # size-check EVERYTHING before writing ANYTHING, so a refused
     # upload never leaves a half-written orphan dir behind
+    tag_close_up = tag_photo if tag_photo is not None else tag_image
     caps = {"side.jpg": 10 * 1024 * 1024, "rear.jpg": 10 * 1024 * 1024,
-            "gait.mp4": 25 * 1024 * 1024}
+            "gait.mp4": 25 * 1024 * 1024, "tag.jpg": 10 * 1024 * 1024}
     blobs = {}
     for filename, upload in [("side.jpg", side_photo), ("rear.jpg", rear_photo),
-                             ("gait.mp4", gait_video)]:
+                             ("gait.mp4", gait_video), ("tag.jpg", tag_close_up)]:
         if upload is not None:
             data = upload.file.read(caps[filename] + 1)
             if len(data) > caps[filename]:
@@ -326,7 +342,8 @@ def create_session(
         saved[filename] = str(session_dir / filename)
 
     result = score_animal(saved.get("side.jpg"), saved.get("rear.jpg"),
-                          saved.get("gait.mp4"), animal)
+                          saved.get("gait.mp4"), animal,
+                          tag_img=saved.get("tag.jpg"))
     result["session_id"] = device_session_id
     result["eligible"] = eligible
     result["eligible_reason"] = reason

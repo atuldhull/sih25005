@@ -131,6 +131,36 @@ def main():
             r4.status_code == 200 and r4.json().get("session_id") != sid,
             "a retaken photo becomes a NEW session, not a duplicate")
         db.sessions.delete_many({"session_id": {"$regex": "^auto-"}})
+
+    # ---- the ear-tag close-up ------------------------------------------
+    # Not sent by the app today - ScanTagScreen captures the tag NUMBER, not a
+    # photograph of it - but everything measured in centimetres depends on it.
+    # In the side photograph the tag is a thumbnail and the detector often
+    # does not find it at all; in a close-up it fills the frame, needs no
+    # detector, and its printed 18 mm digit row gives a scale directly.
+    #
+    # Measured on a real pair: the same session scored by the BASELINE engine
+    # without this photo, and by the real ML pipeline with it. It is the
+    # difference between a demonstration and a measurement.
+    for field in ("tag_photo", "tag_image"):
+        rt = client.post("/session",
+                         data={"tag_id": "356279812345",
+                               "device_session_id": f"{SID}-{field}"},
+                         files={"side_photo": ("s.jpg", JPG, "image/jpeg"),
+                                "rear_photo": ("r.jpg", JPG, "image/jpeg"),
+                                field: ("t.jpg", JPG, "image/jpeg")})
+        failures += not check(rt.status_code == 200,
+                              f"{field} is accepted", f"got HTTP {rt.status_code}")
+
+    # and it stays optional - a session without one must not be rejected
+    rn = client.post("/session",
+                     data={"tag_id": "356279812345",
+                           "device_session_id": f"{SID}-notag"},
+                     files={"side_photo": ("s.jpg", JPG, "image/jpeg"),
+                            "rear_photo": ("r.jpg", JPG, "image/jpeg")})
+    failures += not check(rn.status_code == 200,
+                          "a session with no tag close-up still works",
+                          f"got HTTP {rn.status_code}")
     _cleanup()
 
     print(f"\n{'ALL CHECKS PASSED' if not failures else f'{failures} FAILED'}")

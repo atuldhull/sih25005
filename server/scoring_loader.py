@@ -74,11 +74,24 @@ def engine_status() -> dict:
     return status
 
 
-def score_animal(side_img, rear_img, video_path, animal_record) -> dict:
+def score_animal(side_img, rear_img, video_path, animal_record,
+                 tag_img=None) -> dict:
+    """tag_img is the ear-tag close-up, and is optional.
+
+    Passed only to the real pipeline, and only when present - the baseline
+    engine has no use for it, and older pipelines may not accept the argument
+    at all, so a TypeError falls back to the four-argument call rather than
+    taking the whole run down.
+    """
     _try_import()
     if _real_score is not None:
         try:
-            result = _real_score(side_img, rear_img, video_path, animal_record)
+            try:
+                result = _real_score(side_img, rear_img, video_path,
+                                     animal_record, tag_img=tag_img)
+            except TypeError:
+                result = _real_score(side_img, rear_img, video_path,
+                                     animal_record)
             problems = validate(result, mode="pipeline")
             if not problems:
                 scored = sum(1 for t in result.get("traits", [])
