@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 from ml.detection import detector  # noqa: E402
-from ml.common.schemas import DetectionResult  # noqa: E402
+from ml.common.schemas import DetectionResult
+from ml.config.detection import EAR_TAG_DECODER_LAYER  # noqa: E402
 
 
 @pytest.fixture
@@ -88,27 +89,61 @@ class TestDetection:
         )
         assert detector.detect_animal(sample_image) is None
 
-    def test_detect_ear_tag_returns_cropped_coords(self, sample_image, monkeypatch):
-        monkeypatch.setattr(detector, "load_rt_detr", lambda device=None: (object(), object()))
-        monkeypatch.setattr(
-            detector,
-            "_run_detector",
-            lambda image_bgr, model_and_processor, threshold=0.5: [
-                {"label": 1, "score": 0.88, "bbox": (125, 80, 175, 100)}
-            ],
-        )
+    def test_detect_ear_tag_returns_full_frame_coords(self, sample_image, monkeypatch):
+        """Boxes come back in FULL-IMAGE coordinates, with no crop offset.
+
+        Replaces test_detect_ear_tag_returns_cropped_coords. The detector no
+        longer crops to the animal and re-runs, so there is no offset to add
+        back - adding one now would shift every tag by the animal box's
+        origin, which is exactly the bug that produced a box at x1 = -50.9.
+        """
+        calls = []
+
+        def fake_run(image_bgr, model_and_processor, threshold=0.5,
+                     decoder_layer=None):
+            calls.append({"shape": image_bgr.shape,
+                          "decoder_layer": decoder_layer})
+            return [{"label": 1, "score": 0.88, "bbox": (125, 80, 175, 100)}]
+
+        monkeypatch.setattr(detector, "load_rt_detr",
+                            lambda device=None: (object(), object()))
+        monkeypatch.setattr(detector, "_run_detector", fake_run)
         result = detector.detect_ear_tag(sample_image, (100, 60, 300, 160))
+
         assert isinstance(result, DetectionResult)
         assert result.class_name == "ear_tag"
-        # crop offset (100, 60) applied back onto bbox within the animal box
-        assert result.bbox == (225, 140, 275, 160)
+        # unchanged from what the detector returned: no offset arithmetic
+        assert result.bbox == (125, 80, 175, 100)
+        # exactly one forward pass, on the whole frame, at the configured layer
+        assert len(calls) == 1
+        assert calls[0]["decoder_layer"] == EAR_TAG_DECODER_LAYER
+
+    def test_detect_ear_tag_rejects_a_tag_outside_the_animal(
+            self, sample_image, monkeypatch):
+        """Containment replaces the crop.
+
+        A tag mostly outside the animal box belongs to a neighbouring animal.
+        The old crop could pick those up along its edges; containment cannot.
+        """
+        monkeypatch.setattr(detector, "load_rt_detr",
+                            lambda device=None: (object(), object()))
+        monkeypatch.setattr(
+            detector, "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5,
+            decoder_layer=None: [
+                {"label": 1, "score": 0.95, "bbox": (10, 10, 30, 20)}
+            ],
+        )
+        # animal box is (100, 60, 300, 160); the tag sits entirely outside it
+        assert detector.detect_ear_tag(sample_image, (100, 60, 300, 160)) is None
 
     def test_detect_ear_tag_none_when_no_tag(self, sample_image, monkeypatch):
-        monkeypatch.setattr(detector, "load_rt_detr", lambda device=None: (object(), object()))
+        monkeypatch.setattr(detector, "load_rt_detr",
+                            lambda device=None: (object(), object()))
         monkeypatch.setattr(
-            detector,
-            "_run_detector",
-            lambda image_bgr, model_and_processor, threshold=0.5: [
+            detector, "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5,
+            decoder_layer=None: [
                 {"label": 0, "score": 0.92, "bbox": (1, 2, 300, 150)}
             ],
         )

@@ -96,8 +96,18 @@ def score_animal(side_photo_path, rear_photo_path, gait_video_path, animal_recor
         "animal_id": animal_record["_id"],
         "species": animal_record["species"],
         "breed_registered": animal_record["breed"],
-        "breed_verified": True,
-        "breed_verify_confidence": round(rng.uniform(0.85, 0.95), 2),
+        # This engine has no vision model, so it cannot verify a breed. It
+        # used to return True with a confidence drawn from uniform(0.85,
+        # 0.95) - a number nobody could defend if a judge asked where it came
+        # from, and one measurement has since contradicted: exact-breed
+        # verification scores 38.1% source-held-out with uninformative
+        # confidence, and the real model disables its own breed head.
+        #
+        # null is the honest value. server/main.py coerces it to False for
+        # app compatibility and sets breed_verify_status="unverified", which
+        # is what the app should display.
+        "breed_verified": None,
+        "breed_verify_confidence": None,
         "eligible": True,           # server re-fills from its own check
         "eligible_reason": None,    # server re-fills
         "captured": {

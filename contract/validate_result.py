@@ -39,6 +39,31 @@ SERVER_KEYS = ["session_id", "eligible", "eligible_reason", "risk_report",
 TRAIT_KEYS = ["name", "category", "score", "confidence", "measured_value",
               "ci", "measure_class", "view", "overlay_points", "explanation"]
 
+# Breed/group verification, added by ml/pose_features/embedding_extractor.py.
+#
+# OPTIONAL on purpose. The baseline engine does not produce them, and the app
+# can ignore unknown keys safely, so adding them needed no contract break -
+# which is why they are here rather than in PIPELINE_KEYS. Validated for TYPE
+# when present, never for presence.
+#
+# Why they exist at all: exact-breed verification does not work on data we can
+# legally use (38.1% source-held-out, and its confidence carries no
+# information), so breed_verified stays null. The coarser GROUP call does work
+# - 80.2% against a 60.7% background control - and group_consistent against
+# the BPA record is the actually useful signal.
+VERIFICATION_KEYS = {
+    "predicted_species": (str,),
+    "species_confidence": (int, float),
+    "species_consistent": (bool,),
+    "predicted_group": (str,),
+    "group_confidence": (int, float),
+    "group_consistent": (bool,),
+    "group_reliable": (bool,),
+    "breed_verify_note": (str,),
+}
+VALID_GROUPS = {"red_zebu", "grey_draught", "dwarf_cattle", "exotic_dairy",
+                "buffalo"}
+
 
 def validate(result: dict, mode: str = "pipeline") -> list[str]:
     p = []
@@ -46,6 +71,28 @@ def validate(result: dict, mode: str = "pipeline") -> list[str]:
     for k in required:
         if k not in result:
             p.append(f"missing top-level key: '{k}'")
+
+    # verification fields: null is always valid (it means "did not / could
+    # not assess"), but a present value must have the right type. A string
+    # where the app expects a bool is a decode failure on the phone.
+    for k, types in VERIFICATION_KEYS.items():
+        if k in result and result[k] is not None:
+            if not isinstance(result[k], types):
+                p.append(f"{k}: must be "
+                         f"{' or '.join(t.__name__ for t in types)} or null, "
+                         f"got {type(result[k]).__name__}")
+    g = result.get("predicted_group")
+    if g is not None and g not in VALID_GROUPS:
+        p.append(f"predicted_group: '{g}' is not one of {sorted(VALID_GROUPS)}")
+    for k in ("species_confidence", "group_confidence"):
+        v = result.get(k)
+        if isinstance(v, (int, float)) and not 0.0 <= v <= 1.0:
+            p.append(f"{k}: must be between 0 and 1, got {v}")
+    # A verdict without a prediction is incoherent - it would tell the app to
+    # flag a record while naming nothing to flag it against.
+    if result.get("group_consistent") is not None and             result.get("predicted_group") is None:
+        p.append("group_consistent is set but predicted_group is null - a "
+                 "verdict with nothing behind it")
 
     traits = result.get("traits")
     if not isinstance(traits, list):

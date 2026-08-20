@@ -18,12 +18,18 @@ server/uploads/
 server/overlays_cache/
 server/voice_cache/
 
-# ML weights and datasets (too big for git - share via Drive/Kaggle)
+# ML weights and datasets (too big for git - fetched, see models/README.md)
 ml/weights/
 ml/datasets/
+models/
 *.pt
 *.pth
 *.onnx
+# The RT-DETRv2 export is safetensors, which *.pt does NOT cover - without
+# this line a 40-160 MB blob lands in git. GitHub hard-blocks single files
+# over 100 MB, and the pose checkpoint is over that on its own.
+*.safetensors
+*.bin
 
 # OS junk
 Thumbs.db

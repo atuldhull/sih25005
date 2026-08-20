@@ -7,6 +7,7 @@ end. FAIL = the demo will visibly break; WARN = a fallback will kick
 in (voice/LLM quality drops but nothing dies). Works whether the
 server is already running or not.
 """
+import importlib
 import json
 import os
 import shutil
@@ -372,6 +373,43 @@ def main():
         check("FAIL", "MongoDB went away during the engine check", str(e))
     except Exception as e:
         check("FAIL", "scoring loader broken", str(e))
+
+    # 9b. ML library versions, but ONLY once ml/ is on disk. The loader
+    # imports ml.pipeline into THIS process, so the pipeline's libraries
+    # become the server's libraries - and server/requirements.txt does not
+    # list them, which means a fresh venv can import the pipeline and then
+    # fail inside it.
+    #
+    # The version pin is not housekeeping. RT-DETRv2 stores its per-layer
+    # prediction heads tied; transformers 5.15.1 expects them untied and
+    # fills the gap with RANDOM weights. The ear_tag head reads decoder
+    # layer 1 - one of the layers it randomises. The result is not a crash:
+    # it is a confident-looking 0.62 detection with a box outside the image,
+    # and it changes on every process start. 5.0.0 loads them correctly.
+    # That cost two days to find, so it gets asserted here.
+    if (HERE.parent / "ml" / "pipeline.py").exists():
+        for mod, pin in (("torch", None), ("timm", None),
+                         ("transformers", "5.0.0")):
+            try:
+                m = importlib.import_module(mod)
+                got = getattr(m, "__version__", "?")
+                if pin and got != pin:
+                    check("FAIL", f"{mod} {got} - MUST be {pin}",
+                          "5.15.1 randomises RT-DETRv2's tied prediction "
+                          "heads: ear_tag boxes look plausible and are "
+                          f"garbage. pip install {mod}=={pin}")
+                else:
+                    check("PASS", f"{mod} {got}"
+                          + (f" (pinned {pin})" if pin else ""))
+            except ImportError:
+                check("FAIL", f"{mod} not installed in the SERVER env",
+                      "the loader imports ml.pipeline into this process, so "
+                      "the pipeline's deps must be installed here too - they "
+                      "are not in server/requirements.txt")
+    else:
+        check("PASS", "ML library check skipped (no ml/pipeline.py yet)",
+              "once Person 2's pipeline lands this asserts "
+              "transformers==5.0.0")
 
     # 10. Disk space
     free_gb = shutil.disk_usage(str(HERE)).free / 1e9

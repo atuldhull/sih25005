@@ -16,7 +16,6 @@ exclusively via HuggingFace `transformers` (Apache-2.0), which is license-safe.
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-import cv2
 import numpy as np
 from PIL import Image
 
@@ -45,6 +44,31 @@ class DetectionLabelError(ValueError):
 _rt_detr_model: Any = None
 _rt_detr_processor: Any = None
 _sam2_predictor: Any = None
+
+
+def _get_cv2():
+    """Lazily import cv2, translating a missing installation into
+    DetectionBackendError so it degrades through the same graceful path as
+    the other backends (transformers, sam2) instead of failing at module
+    import time. cv2 was previously imported at module scope, which meant a
+    missing installation raised ModuleNotFoundError when `import ml.pipeline`
+    ran, before any try/except in the pipeline could handle it - the package
+    could not even be imported on a machine without cv2 installed.
+
+    numpy/PIL are intentionally NOT made lazy here: they aren't the
+    dependency the original finding was about, numpy appears in this
+    module's type annotations (np.ndarray) which would need broader
+    signature changes to make lazy, and neither is as heavy/environment-
+    fragile as cv2 (system libs) or torch/transformers (already lazy below).
+    """
+    try:
+        import cv2
+        return cv2
+    except ImportError as exc:
+        raise DetectionBackendError(
+            "'opencv-python' (cv2) is not installed. Install it with "
+            "`pip install opencv-python` to use the detection backend."
+        ) from exc
 
 
 def validate_label_map() -> None:
@@ -160,14 +184,10 @@ def _run_detector(
 ) -> List[Dict[str, Any]]:
     """Run RT-DETRv2 over a BGR image (as loaded by cv2.imread) and return
     normalized detections: [{label: int, score: float, bbox: (x1,y1,x2,y2)}].
-
-    decoder_layer=None reads the FINAL layer (unchanged behaviour). An int
-    reads that intermediate decoder layer instead - ear_tag does, because the
-    final layer's tag head collapsed in this checkpoint. See
-    EAR_TAG_DECODER_LAYER in config/detection.py for the measured figures.
     """
     import torch
 
+    cv2 = _get_cv2()
     model, processor = model_and_processor
 
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
@@ -237,6 +257,7 @@ def _pad_bbox(box) -> Tuple[float, float, float, float]:
 def detect_animal(image_path: str, device: str = DEFAULT_DEVICE) -> Optional[DetectionResult]:
     """Detect the best-animal box in an image, or return None if none is found."""
     validate_label_map()
+    cv2 = _get_cv2()
     image = cv2.imread(image_path)
     if image is None:
         return None
@@ -274,6 +295,7 @@ def detect_ear_tag(
     animal, so the signature, return type and meaning are unchanged.
     """
     validate_label_map()
+    cv2 = _get_cv2()
     image = cv2.imread(image_path)
     if image is None or animal_bbox is None:
         return None
@@ -367,6 +389,7 @@ def segment_animal(
     box as a rectangle and segmentation_degraded is True. A debug masked-blur
     image is written under debug_dir.
     """
+    cv2 = _get_cv2()
     image = cv2.imread(image_path)
     if image is None:
         raise DetectionBackendError(f"Cannot read image for segmentation: {image_path}")
@@ -401,6 +424,7 @@ def _write_debug_images(
     debug_dir: str,
 ) -> str:
     """Blur everything outside the mask and save it, plus the raw mask, for debugging."""
+    cv2 = _get_cv2()
     os.makedirs(debug_dir, exist_ok=True)
     stem = os.path.splitext(os.path.basename(image_path))[0]
 
