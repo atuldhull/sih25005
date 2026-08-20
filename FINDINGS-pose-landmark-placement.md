@@ -51,13 +51,33 @@ python -m ml.eval_landmark_placement <folder> 30
 | hock_left / hock_right | 68% | 0.89 / 0.86 | 0.60–0.95 |
 | pastern_left / right | 67% / 60% | 0.86 | anywhere, low |
 | hip_bone_right | 60% | 0.87 | 0.65–0.95 |
-| **withers** | 35% | 0.57 | 0.20–0.55 |
+| withers | 29% | 0.57 | 0.42–0.68 — median inside; see the correction below |
 | **shoulder_right / left** | 29% / 22% | 0.47 / 0.49 | 0.10–0.40 |
 | **knee_right / left** | 27% / 11% | 0.43 / 0.49 | 0.05–0.40 |
 | **hook_right** | 9% | 0.49 | 0.65–0.95 |
-| **back_mid** | 0% | 0.78 | 0.35–0.70 |
+| **back_mid** | 23% | 0.78 | 0.45–0.75 |
 | **pin_right** | 0% | 0.45 | 0.78–1.00 |
 | **chest_front** | 0% | 0.60 | 0.00–0.30 |
+
+### A correction, because one of these boxes was mine and it was wrong
+
+The first version of this report listed `withers` as misplaced 65% of the time
+against an expected range of 0.20–0.55. That range was drawn from European
+anatomy. Indian cattle are *Bos indicus* and carry a **hump** over the
+shoulders, and the withers sits BEHIND the hump — not at the top of the
+shoulder where a Holstein's would be.
+
+Measured over 21 photographs: the topline peaks at x 0.36, the first dip behind
+that peak is at x 0.52, and the topline drops **13.2% of the animal's height**
+between them. That drop is the hump. The model's withers sits at x 0.57, which
+is at that dip — roughly where a zebu's withers belongs.
+
+So `withers` is noisy here, not systematically displaced, and the box has been
+corrected. The same mistake would matter far more in a measurement than in an
+audit: taking stature to the topline PEAK, which is what an obvious
+silhouette-based derivation would do, would add the entire hump to the
+animal's height. That is why the withers is NOT derived from the silhouette
+the way `chest_front` now is.
 
 The pattern is one-directional and hard to read any other way: **landmarks on
 the front of the animal are pulled backwards toward its centre.** The brisket,
@@ -65,9 +85,10 @@ the shoulders and the carpus all sit near x ≈ 0.5. The rear landmarks — tail
 head, hip bones, hocks, pasterns — are mostly where they belong.
 
 A caveat on reading this: the expected boxes are my judgement of where a cow's
-anatomy is, drawn deliberately loose. Treat the marginal rows (withers,
-shoulders, hooves) as suggestive. `chest_front` at 0% with a median of 0.60
-against a bound of 0.30 is not marginal — the brisket is being predicted behind
+anatomy is, drawn deliberately loose - and one of them turned out to be wrong,
+which is worth knowing before trusting the rest. Treat the marginal rows
+(withers, shoulders, hooves) as suggestive. `chest_front` at 0% with a median
+of 0.60 against a bound of 0.30 is not marginal — the brisket is being predicted behind
 the middle of the animal, on 18 of 18 photographs where it was confident enough
 to use at all.
 

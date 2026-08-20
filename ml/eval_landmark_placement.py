@@ -36,8 +36,20 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 # (x_low, x_high, y_low, y_high), fractions of the silhouette, front-to-rear.
 # Deliberately loose - these are "anywhere near right", not tolerances.
 EXPECTED = {
-    "withers":          (0.20, 0.55, 0.00, 0.30),
-    "back_mid":         (0.35, 0.70, 0.00, 0.30),
+    # Zebu anatomy, not European. Bos indicus carries a HUMP over the
+    # shoulders, and the withers sits BEHIND it - not at the top of the
+    # shoulder where a Holstein's would be. Measured on 21 photographs, the
+    # topline peaks at x 0.36 and the first dip behind that peak is at x 0.52,
+    # with the topline dropping 13.2% of the animal's height between them.
+    # That drop is the hump.
+    #
+    # The first version of this box was 0.20-0.55, drawn from European
+    # anatomy, and it marked the withers as misplaced 65% of the time. It was
+    # the box that was wrong. The same mistake would matter far more in a
+    # measurement than in an audit: taking stature to the topline PEAK would
+    # add the whole hump to the animal's height.
+    "withers":          (0.42, 0.68, 0.00, 0.35),
+    "back_mid":         (0.45, 0.75, 0.00, 0.32),
     "tail_head":        (0.80, 1.00, 0.00, 0.35),
     "chest_front":      (0.00, 0.30, 0.20, 0.70),
     "chest_bottom":     (0.15, 0.50, 0.45, 0.85),
