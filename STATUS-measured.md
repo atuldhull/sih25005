@@ -96,6 +96,34 @@ relying on a small "Baseline" label beside twenty confident-looking numbers.
 | without `tag_photo` | `baseline` | invented |
 | with `tag_photo` | `ml-pipeline` | measured |
 
+## Every route by which invented data could reach a person
+
+The baseline engine does not merely fill in blanks. It invents all twenty
+scores, a weight with a cross-check, and SYMPTOMS — `skin_nodules` at
+confidence 0.82, or `gait_asymmetry`. It answers on roughly two thirds of
+sessions today. Those figures had five ways out of the server, and every one of
+them presented the invention as a measurement of a real animal:
+
+| route | what it said | now |
+|---|---|---|
+| demo console | 20 confident scores beside a small "Baseline" label | **DEMONSTRATION DATA — these scores were NOT measured** |
+| farmer report | "No health problems were flagged from today's photos and video. Keep up the regular care." | says the animal was NOT checked for illness, and to see a vet if she seems unwell |
+| vet report | "Detected signs: none." | **NOT SCREENED** — nothing was examined |
+| chat, text and voice | "Your Gir's weight is around 418 kg" | says the figure is a placeholder and a real session is needed — in English and Hindi |
+| vet alert feed | a written vet summary and a village outbreak signal | **DEMONSTRATION ALERT — do not act on it** |
+
+The chat took two attempts, which is worth recording. Labelling the numbers
+inline was not enough: given `weight around 418 kg [DEMONSTRATION PLACEHOLDER
+- NOT MEASURED]` and an explicit instruction not to quote it, the local
+qwen2.5:7b still answered *"the weight trend from 392 kg to 418 kg suggests
+improvement"*. A small model cannot be relied on to withhold a number it can
+see, so the figures are withheld from its context entirely.
+
+The alert feed is the one that mattered most. An invented `skin_nodules`
+finding at confidence 0.82 flowed through the knowledge graph into
+`needs_escalation` and produced a real entry in a veterinary officer's feed,
+about an animal nothing had examined. Someone could drive to a farm over it.
+
 ## Why coverage is what it is
 
 The pose model has learned the rear half of the animal and not the front.
@@ -161,7 +189,7 @@ Each of these produced no error, which is why they lasted:
 ## Tests
 
     395   ml/tests
-     10   server suites (test_app_contract, test_session, test_demo,
+     11   server suites (test_app_contract, test_session, test_demo,
           test_concurrency, test_vkg, test_rag, test_chat, test_providers,
           test_voice, test_reports_not_screened)
      38   server/test_demo_ui.js
