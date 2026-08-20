@@ -271,6 +271,55 @@
   // The rule this panel exists to enforce: breed_verified === false means NOT
   // CHECKED, never CONTRADICTED. Rendering it as a mismatch would accuse a
   // correctly registered animal on every single record.
+  // ---- Weight ---------------------------------------------------------
+  // The estimate comes from reconstructing a torso volume out of the two
+  // photographs, and a second, unrelated route (girth and length) is computed
+  // alongside it. Showing only the range would hide the most useful thing on
+  // the card: whether the two methods agreed. They are never averaged - when
+  // they disagree the interval is widened to span both, and that has to be
+  // visible or the wider interval just looks like a vaguer answer.
+  function renderWeight(res) {
+    const w = res.weight_kg || {};
+    const card = el("div", "card");
+    card.appendChild(el("h3", null, "Weight"));
+
+    if (typeof w.low !== "number" || typeof w.high !== "number") {
+      card.appendChild(el("div", "muted",
+        "Not measured. Weight needs a real scale in centimetres, which comes " +
+        "from the ear tag - without a readable tag in the side photograph " +
+        "there is no way to turn pixels into kilograms, and a number would be " +
+        "a guess an animal might be sold on."));
+      return card;
+    }
+
+    const rows = el("div", "cat");
+    const r = el("div", "trow");
+    r.appendChild(el("div", "tname", "Estimated live weight"));
+    r.appendChild(el("div", "tmeas", w.method
+      ? String(w.method).replace(/-/g, " ") : "method not recorded"));
+    r.appendChild(el("div", "tscore", `${Math.round(w.low)}–${Math.round(w.high)} kg`));
+    rows.appendChild(r);
+
+    if (w.cross_check) {
+      const disagrees = /DISAGREE/i.test(w.cross_check);
+      const c = el("div", "trow");
+      c.appendChild(el("div", "tname", "Second method"));
+      c.appendChild(el("div", "tmeas", disagrees
+        ? "an independent route disagrees - the range above has been widened "
+          + "to span both rather than averaging them"
+        : "an independent route agrees, within tolerance"));
+      c.appendChild(el("div", "tscore" + (disagrees ? " na" : ""),
+        String(w.cross_check).replace(/ - DISAGREES.*$/i, "")));
+      rows.appendChild(c);
+    }
+    card.appendChild(rows);
+    card.appendChild(el("div", "muted",
+      "The interval is dominated by an assumed body density and by the tag " +
+      "scale, which enters as a CUBE - a 4% error in centimetres per pixel is " +
+      "a 12% error in kilograms. Not calibrated against weighed animals."));
+    return card;
+  }
+
   function renderIdentity(res) {
     const card = el("div", "card");
     card.appendChild(el("h3", null, "Breed identity"));
@@ -371,6 +420,7 @@
     });
     target.appendChild(sum);
 
+    target.appendChild(renderWeight(res));
     target.appendChild(renderIdentity(res));
 
     if (res.escalated) {

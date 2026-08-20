@@ -189,7 +189,63 @@ const REAL = {
   check(!/NaN/.test(t), "no NaN reaches the screen");
 }
 
-console.log(failures === 0
-  ? "\nALL PASS - breed identity panel"
-  : `\n${failures} FAILED`);
+
+// ===== weight panel =======================================================
+// The estimator's whole design is that two unrelated routes are reported
+// against each other rather than averaged. If the console shows only a range,
+// the most useful thing on the card - whether they agreed - is invisible, and
+// a widened interval looks merely like a vaguer answer.
+const renderWeight = (() => {
+  const fs2 = require("fs"), vm2 = require("vm"), p2 = require("path");
+  const html = fs2.readFileSync(p2.join(__dirname, "static", "demo.html"), "utf8");
+  const body = html.split(/<script>/)[1].split(/<\/script>/)[0];
+  const ctx = { document: { createElement: (t) => new Node(t) }, console, Math };
+  const grab = (sig) => {
+    const start = body.indexOf(sig);
+    let i = body.indexOf("{", start), depth = 0;
+    for (; i < body.length; i++) {
+      if (body[i] === "{") depth++;
+      else if (body[i] === "}" && --depth === 0) break;
+    }
+    return body.slice(start, i + 1);
+  };
+  vm2.createContext(ctx);
+  vm2.runInContext([grab("function el("), grab("function renderWeight(")].join("\n")
+    + "\nthis.renderWeight = renderWeight;", ctx);
+  return ctx.renderWeight;
+})();
+
+{
+  const t = renderWeight({ weight_kg: {
+    low: 382, high: 527, method: "torso-volume-from-two-views",
+    cross_check: "girth-length: 527 kg - DISAGREES with the volume estimate" } });
+  check(/382/.test(t.text) && /527/.test(t.text), "the weight range is shown");
+  check(/torso volume from two views/i.test(t.text),
+    "the method is named, not left implicit");
+  check(/disagree/i.test(t.text), "a disagreement between the two routes is stated");
+  check(/widened to span both|rather than averaging/i.test(t.text),
+    "and it says the range was widened rather than averaged");
+  check(/cube/i.test(t.text),
+    "the cube relationship between scale error and weight error is stated");
+}
+{
+  const t = renderWeight({ weight_kg: {
+    low: 390, high: 430, method: "torso-volume-from-two-views",
+    cross_check: "girth-length: 405 kg" } }).text;
+  check(/agrees/i.test(t), "agreement is stated when the routes agree");
+  check(!/DISAGREE/i.test(t), "and agreement is not mislabelled");
+}
+{
+  const t = renderWeight({ weight_kg: {
+    low: null, high: null, method: null, cross_check: null } }).text;
+  check(/not measured/i.test(t), "an unmeasured weight says so");
+  check(/ear tag/i.test(t), "and explains that the scale comes from the tag");
+  check(!/\d+\s*kg/.test(t), "no number is shown when nothing was measured");
+}
+{
+  const t = renderWeight({}).text;
+  check(/not measured/i.test(t), "a missing weight_kg block degrades quietly");
+}
+
+console.log(failures === 0 ? "\nALL PASS - weight panel too" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);
