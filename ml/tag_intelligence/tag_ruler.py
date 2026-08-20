@@ -406,14 +406,24 @@ def estimate_scale_from_digits(image_bgr: np.ndarray,
     # NDDB gives 55-69 mm. Allowing 45-85 mm leaves room for the detector's
     # box padding and a tilted tag while still rejecting anything that would
     # corrupt a scorecard.
-    panel_cm = w * cm_per_px
-    if not (4.5 <= panel_cm <= 8.5):
+    # Check the panel HEIGHT, not its width.
+    #
+    # This gate originally used the width and it was wrong: a tag turned away
+    # from the camera loses width to the cosine while keeping its height, so
+    # a perfectly good reading from a tilted tag was rejected as "wrong by
+    # 46%". That defeated the entire reason the glyph HEIGHT is the ruler.
+    # The cross-check has to be tilt-invariant for the same reason the ruler
+    # is. NDDB item 1 gives the female piece as 55x65 to 58x69 mm, so the
+    # height is 6.5-6.9 cm; 5.0-9.5 cm leaves room for the detector's box
+    # padding and vertical foreshortening.
+    panel_cm = h * cm_per_px
+    if not (5.0 <= panel_cm <= 9.5):
         return ScaleRefusal(
             reason="The ear tag scale did not check out against the tag's "
                    "own size - retake the photo straight on.",
-            detail=f"implied panel width {panel_cm:.1f} cm; a real NDDB tag "
-                   f"is 5.5-6.9 cm, so this scale would be wrong by roughly "
-                   f"{abs(100 * (panel_cm - 6.2) / 6.2):.0f}%")
+            detail=f"implied panel height {panel_cm:.1f} cm; a real NDDB tag "
+                   f"is 6.5-6.9 cm, so this scale would be wrong by roughly "
+                   f"{abs(100 * (panel_cm - 6.7) / 6.7):.0f}%")
     # confidence from glyph size (quantisation) and how well the ratio held
     size_conf = float(np.clip((tall_px - MIN_GLYPH_PX) / 30.0, 0.0, 1.0))
     ratio_conf = float(np.clip(

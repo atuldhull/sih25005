@@ -131,13 +131,16 @@ def test_button_diameter_matches_the_source_document():
     assert BUTTON_DIAMETER_MM == 27.0
 
 
-def test_panel_gate_spans_the_published_range():
-    """NDDB item 1: female piece is 55x65 mm to 58x69 mm.
+def test_panel_gate_uses_the_tilt_invariant_dimension():
+    """The gate checks panel HEIGHT (6.5-6.9 cm), not width.
 
-    The gate must accept every conformant tag and still reject a scale that
-    is wrong by an order of magnitude.
+    It used to check the width, and that was wrong: a tag turned away from
+    the camera loses width to the cosine while keeping its height, so a
+    perfectly good reading from a tilted tag was rejected as "wrong by 46%".
+    A cross-check has to be tilt-invariant for the same reason the ruler is -
+    caught by test_tag_scale_recovery's turned-away case.
     """
-    for panel_cm in (5.5, 5.8, 6.5, 6.9):
-        assert 4.5 <= panel_cm <= 8.5, f"{panel_cm}cm is a real tag, must pass"
-    for wrong in (2.0, 12.6, 40.0):
-        assert not (4.5 <= wrong <= 8.5), f"{wrong}cm must be rejected"
+    for panel_h_cm in (6.5, 6.7, 6.9):
+        assert 5.0 <= panel_h_cm <= 9.5, f"{panel_h_cm}cm is a real tag height"
+    for wrong in (2.0, 3.4, 12.6, 40.0):
+        assert not (5.0 <= wrong <= 9.5), f"{wrong}cm must be rejected"
