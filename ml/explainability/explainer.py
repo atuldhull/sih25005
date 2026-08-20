@@ -1,4 +1,4 @@
-﻿"""Explainability assembler: human-readable explanations and overlay geometry per trait."""
+"""Explainability assembler: human-readable explanations and overlay geometry per trait."""
 
 from typing import Dict, List
 
@@ -26,6 +26,10 @@ def generate_trait_explanation(measurement: MeasurementResult, score: ScoreResul
     )
 
 
+from ml.measurement.traits import (  # noqa: E402
+    KEYPOINT_CONFIDENCE_THRESHOLD)
+
+
 def generate_overlay_data(trait_id: str, keypoints: dict) -> dict:
     """Return the coordinates needed to draw this trait's measurement on an image.
 
@@ -39,7 +43,13 @@ def generate_overlay_data(trait_id: str, keypoints: dict) -> dict:
         if name not in keypoints:
             continue
         x, y, confidence = keypoints[name]
-        if confidence < 0.3:
+        # The SAME threshold measurement used, imported rather than repeated.
+        # This was hardcoded at 0.3 while measurement moved to 0.10, so a
+        # trait computed from a joint at 0.15 had that joint missing from its
+        # own overlay. The overlay is shown to a judge and a vet officer as
+        # the proof of the measurement - it has to show the points the
+        # measurement actually used, or it is proof of something else.
+        if confidence < KEYPOINT_CONFIDENCE_THRESHOLD:
             continue
         points.append((x, y))
 
