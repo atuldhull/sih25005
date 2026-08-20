@@ -257,6 +257,23 @@ def measure_cm(pixel_distance: float, res: ScaleResult,
 # something other than the digit rows has been found, and we refuse rather
 # than scale the whole scorecard off a shadow.
 
+# CONFIRMED against the primary source: "TECHNICAL SPECIFICATIONS OF EARTAG &
+# EAR TAG APPLICATOR", NDDB, 15-02-2016. Item 4, Printing (Laser):
+#
+#     1st Line : One dimensional Barcode with encoding 128, 10mm high (+/-1mm)
+#     2nd Line : A row of 6 digits, 10mm high (+/-1mm)
+#     3rd Line : A row of 6 digits, 18mm high (+/-1mm)
+#
+# So a conformant tag shows THREE ink bands at 10, 10 and 18 mm - not two.
+# That is a much stronger check than a single ratio: two of the three bands
+# must measure the SAME height, and the third must be 1.8x them. Random ink,
+# a shadow, or the dark edge of an ear will not satisfy both at once.
+#
+# Item 5 gives one more invariant: "Numbers and bar code should be covering
+# full size of the female tag and leaving 2 mm margin on all sides", so the
+# printed block spans the panel width minus 4 mm.
+TAG_MARGIN_MM = 2.0
+EQUAL_ROWS_TOL = 0.25      # the two 10 mm rows, measured on ink
 DIGIT_ROW_RATIO = DIGIT_LINE_MM / BARCODE_LINE_MM      # 1.8
 # Tightened from 0.35 after a real tag slipped through at ratio 2.20: the
 # 'tall row' was the dark EAR above the panel, not a digit row, and the
@@ -341,16 +358,30 @@ def estimate_scale_from_digits(image_bgr: np.ndarray,
                    "retake the photo straight on, in better light.",
             detail=f"found {len(bands)} ink band(s), need at least 2")
 
-    # The two digit rows are the widest ink bands - wider than the barcode.
+    # A conformant tag prints three lines: barcode 10 mm, digits 10 mm,
+    # digits 18 mm. Take the three widest ink bands and sort by height.
     bands.sort(key=lambda b: -b[2])
     cand = sorted(bands[:3], key=lambda b: -(b[1] - b[0]))
-    tall = cand[0]
-    short = next((b for b in cand[1:] if (b[1] - b[0]) > 0), None)
-    tall_px = float(tall[1] - tall[0])
-    if short is None:
+    if len(cand) < 2:
         return ScaleRefusal(reason="Only one printed row was found on the tag.",
-                            detail="need both digit rows to cross-check")
-    short_px = float(short[1] - short[0])
+                            detail="need at least two rows to cross-check")
+    tall_px = float(cand[0][1] - cand[0][0])
+    short_px = float(cand[1][1] - cand[1][0])
+
+    # With all three visible, the two 10 mm lines must measure the same. That
+    # is an independent check the single ratio cannot give: it rejects a case
+    # where one "row" is actually a shadow that happens to sit at 1.8x.
+    if len(cand) >= 3:
+        a = float(cand[1][1] - cand[1][0])
+        b = float(cand[2][1] - cand[2][0])
+        if max(a, b) > 0 and abs(a - b) / max(a, b) > EQUAL_ROWS_TOL:
+            return ScaleRefusal(
+                reason="The tag's printed rows do not match the NDDB layout "
+                       "- the scale would not be trustworthy.",
+                detail=f"the two 10 mm lines measured {a:.0f}px and {b:.0f}px; "
+                       f"a conformant tag prints barcode 10 mm, digits 10 mm "
+                       f"and digits 18 mm")
+        short_px = (a + b) / 2.0     # average the two 10 mm lines
 
     # the free validity check: 18 mm over 10 mm must measure near 1.8:1
     ratio = tall_px / max(short_px, 1e-6)
