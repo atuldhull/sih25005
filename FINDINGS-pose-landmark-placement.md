@@ -78,8 +78,12 @@ to use at all.
   scraped ones, so it is not an image-quality effect.
 - `body_length_to_height_ratio` therefore reads **0.55** against a band of
   0.9–1.4, with an uncertainty of only ±0.03. A cow cannot be half as long as
-  it is tall. Substituting a silhouette-derived brisket changed it by 0.01, so
-  `pin_left` is displaced too — both landmarks sit mid-body.
+  it is tall, and the tight uncertainty says this is not noise — it is the
+  landmarks. (An early attempt at substituting only the x of a
+  silhouette-derived brisket moved this by 0.01, which suggested `pin_left` was
+  displaced too. Deriving the point properly — see the section below — moves it
+  to 0.93, so `chest_front` was carrying most of the error after all. The pins
+  are still misplaced on their own showing, at 0% and 25% in place.)
 - With a scale supplied, `stature` comes out at **82 cm** and `body_length` at
   **73 cm** on an animal whose barrel alone is 150 cm.
 - `pin_left` and `knee_left` are predicted at the SAME pixel on **41 of 50**
