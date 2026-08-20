@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import time
@@ -225,15 +226,51 @@ def get_animal(animal_id: str):
 
 @app.post("/session")
 def create_session(
-    animal_id: str = Form(...),
-    device_session_id: str = Form(...),
     side_photo: UploadFile = File(...),
     rear_photo: UploadFile = File(...),
+    animal_id: str = Form(None),
+    device_session_id: str = Form(None),
     gait_video: UploadFile = File(None),
+    # --- compatibility with the field names the app actually sends -------
+    # The Flutter client posts tag_id and names the video 'video'. Replaying
+    # its real request returned 422 on animal_id and device_session_id, so
+    # the app could not upload a session at all; and because gait_video is
+    # optional, a video named 'video' was silently DROPPED - a 200 with the
+    # farmer's recording quietly discarded, which is worse than a refusal.
+    #
+    # tag_id and animal_id are the same thing: the 12-digit ear-tag number
+    # IS the _id in the BPA records, so this is an alias, not a guess.
+    tag_id: str = Form(None),
+    video: UploadFile = File(None),
 ):
     # sync on purpose: FastAPI runs sync handlers in a threadpool, so
     # when the real ML pipeline (seconds of CPU) replaces the fake
     # engine, /ping and /chat keep answering while a session scores
+    animal_id = animal_id or tag_id
+    gait_video = gait_video if gait_video is not None else video
+    if not animal_id:
+        raise HTTPException(
+            status_code=422,
+            detail="animal_id (or tag_id) is required")
+
+    # The client may not send a session id. Derive one from the CONTENT
+    # instead of generating a random one, because this id is the offline
+    # queue's idempotency key: a retry of the same upload must collapse to
+    # the same session, and a random id would turn every retry into a
+    # duplicate record. Same animal + same bytes = same id; retake a photo
+    # and the bytes change, so it correctly becomes a new session.
+    if not device_session_id:
+        h = hashlib.sha256()
+        h.update(str(animal_id).encode())
+        for up in (side_photo, rear_photo, gait_video):
+            if up is None:
+                continue
+            up.file.seek(0)
+            for chunk in iter(lambda: up.file.read(1 << 20), b""):
+                h.update(chunk)
+            up.file.seek(0)
+        device_session_id = f"auto-{h.hexdigest()[:24]}"
+
     # this id becomes a FOLDER NAME and a URL path segment. Unvalidated,
     # a timestamp id ("...T10:30:00") is an illegal Windows path (500 on
     # every retry) and "../.." would escape the uploads folder entirely.

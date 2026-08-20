@@ -90,18 +90,47 @@ def main():
                               "eligible_reason is a string, never null")
     _cleanup()
 
-    r2 = client.post("/session", data={"tag_id": "356279812345"},
-                     files={"side_photo": ("s.jpg", JPG, "image/jpeg"),
-                            "rear_photo": ("r.jpg", JPG, "image/jpeg"),
-                            "video": ("g.mp4", MP4, "video/mp4")})
-    missing = set()
-    if r2.status_code == 422:
-        missing = {d["loc"][-1] for d in r2.json().get("detail", [])}
-    failures += not check(
-        r2.status_code == 422 and missing == REQUIRED_FORM_FIELDS,
-        "the app's CURRENT field names are rejected",
-        f"HTTP {r2.status_code}, missing {sorted(missing)} - the app must "
-        f"send animal_id + device_session_id, and name the video gait_video")
+    # The app's OWN field names must work: it sends tag_id, no session id,
+    # and names the video 'video'. Before the compatibility shim this
+    # returned 422 and the app could not upload at all.
+    def app_post():
+        return client.post("/session", data={"tag_id": "356279812345"},
+                           files={"side_photo": ("s.jpg", JPG, "image/jpeg"),
+                                  "rear_photo": ("r.jpg", JPG, "image/jpeg"),
+                                  "video": ("g.mp4", MP4, "video/mp4")})
+
+    r2 = app_post()
+    failures += not check(r2.status_code == 200,
+                          "the app's OWN field names are accepted",
+                          f"got HTTP {r2.status_code}")
+    if r2.status_code == 200:
+        b2 = r2.json()
+        # 'video' used to be silently dropped: the field is optional, so the
+        # server returned 200 and the farmer's recording simply vanished.
+        failures += not check(b2.get("captured", {}).get("gait_video") is True,
+                              "a video named 'video' is NOT silently dropped")
+        sid = b2.get("session_id")
+        failures += not check(bool(sid), "a session id was derived")
+
+        # The derived id is the offline queue's idempotency key. A retry of
+        # the SAME upload must collapse to the same session, or every retry
+        # becomes a duplicate record.
+        r3 = app_post()
+        failures += not check(
+            r3.status_code == 200 and r3.json().get("session_id") == sid,
+            "retrying the same upload is idempotent",
+            f"first {sid}, retry {r3.json().get('session_id') if r3.status_code == 200 else r3.status_code}")
+
+        # Different content must NOT collapse onto the same session.
+        r4 = client.post("/session", data={"tag_id": "356279812345"},
+                         files={"side_photo": ("s.jpg", JPG + b"different",
+                                               "image/jpeg"),
+                                "rear_photo": ("r.jpg", JPG, "image/jpeg"),
+                                "video": ("g.mp4", MP4, "video/mp4")})
+        failures += not check(
+            r4.status_code == 200 and r4.json().get("session_id") != sid,
+            "a retaken photo becomes a NEW session, not a duplicate")
+        db.sessions.delete_many({"session_id": {"$regex": "^auto-"}})
     _cleanup()
 
     print(f"\n{'ALL CHECKS PASSED' if not failures else f'{failures} FAILED'}")
