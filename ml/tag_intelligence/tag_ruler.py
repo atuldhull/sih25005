@@ -232,3 +232,169 @@ def measure_cm(pixel_distance: float, res: ScaleResult,
     rel = float(np.hypot(keypoint_err_frac, scale_error_fraction(
         res, px_uncertainty)))
     return cm, cm * rel
+
+
+# ---------------------------------------------------------------------------
+# Scale from the DIGIT ROWS - the method that works on a front-facing photo
+# ---------------------------------------------------------------------------
+# The 27 mm button is on the REAR of the ear (NDDB Technical Specifications of
+# Eartag & Ear Tag Applicator, 15-02-2016, which lists it as "cross-check /
+# occlusion fallback"). A field officer photographs the FRONT, so the button is
+# not in the picture and the button method correctly refuses.
+#
+# The same spec gives the front-facing features:
+#
+#     Digit rows    6 @ 10 mm + 6 @ 18 mm, +/-1 mm   "different glyph heights"
+#     Barcode line  10 mm tall, +/-1 mm
+#     Female panel  55x65 to 58x69 mm  -> "do not key on the edge" (varies ~5%)
+#
+# So scale comes from the GLYPH HEIGHT of the 18 mm digit row. That is a
+# tighter tolerance than the button: +/-1 mm on 18 mm is 5.6%, against +/-2 mm
+# on 27 mm at 7.4%. The front-facing feature is the better ruler.
+#
+# The two rows also give a free validity check. Their true heights are 18 mm
+# and 10 mm, so the measured heights must come out near 1.8:1. If they do not,
+# something other than the digit rows has been found, and we refuse rather
+# than scale the whole scorecard off a shadow.
+
+DIGIT_ROW_RATIO = DIGIT_LINE_MM / BARCODE_LINE_MM      # 1.8
+# Tightened from 0.35 after a real tag slipped through at ratio 2.20: the
+# 'tall row' was the dark EAR above the panel, not a digit row, and the
+# resulting scale was 25% small. Antialiasing costs about a pixel an edge,
+# so 0.20 still has room for that on a legible row.
+DIGIT_ROW_RATIO_TOL = 0.20
+MIN_GLYPH_PX = 6.0             # below this, +/-1 px is already a 17% error
+DIGIT_SCALE_MIN_ERROR_FRAC = 0.056   # the spec's own +/-1 mm on 18 mm
+
+
+def _ink_bands(panel_gray: np.ndarray, min_frac: float = 0.10
+               ) -> List[Tuple[int, int, int]]:
+    """Horizontal bands of dark ink: [(top, bottom, width_px), ...].
+
+    Rows are 'inky' when enough of the row is dark. Printed text gives a solid
+    band; a shadow or an ear edge does not hold across the panel width, which
+    is what min_frac filters out.
+    """
+    if panel_gray.size == 0:
+        return []
+    # Threshold against the PANEL's own brightness, not a fixed cutoff. A
+    # fixed "< 100" counted shadowed yellow as ink, which merged the top of
+    # the tag into one 77px "row" and produced a scale 25% small. Otsu splits
+    # ink from panel on whatever exposure the photo happens to have.
+    import cv2
+    _, binary = cv2.threshold(panel_gray, 0, 1,
+                              cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    dark = binary.astype(np.uint8)
+    h, w = dark.shape
+    rowsum = dark.sum(axis=1)
+    bands, start = [], None
+    for i in range(h):
+        on = rowsum[i] > min_frac * w
+        if on and start is None:
+            start = i
+        elif not on and start is not None:
+            bands.append((start, i))
+            start = None
+    if start is not None:
+        bands.append((start, h))
+    out = []
+    for a, b in bands:
+        cols = np.where(dark[a:b].sum(axis=0) > 0)[0]
+        width = int(cols.max() - cols.min() + 1) if len(cols) else 0
+        out.append((a, b, width))
+    return out
+
+
+def estimate_scale_from_digits(image_bgr: np.ndarray,
+                               tag_bbox: Sequence[float]
+                               ) -> "ScaleResult | ScaleRefusal":
+    """Centimetres per pixel from the 18 mm digit row on the tag front."""
+    import cv2
+
+    crop, _origin = _crop(image_bgr, tag_bbox, pad=0.02)
+    if crop is None or crop.size == 0:
+        return ScaleRefusal(reason="Ear tag crop was empty.",
+                            detail="bbox outside the image")
+
+    # isolate the lemon-yellow panel; the spec calls out high chroma contrast
+    # against every coat colour, which is exactly what makes this findable
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, (15, 70, 70), (45, 255, 255))
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return ScaleRefusal(
+            reason="The yellow tag panel could not be found - retake the "
+                   "photo with the tag facing the camera.",
+            detail="no lemon-yellow region inside the tag box")
+    x, y, w, h = cv2.boundingRect(max(cnts, key=cv2.contourArea))
+    if w < 20 or h < 20:
+        return ScaleRefusal(
+            reason="The ear tag is too small in this photo to measure - "
+                   "move closer.",
+            detail=f"panel only {w}x{h}px")
+
+    panel = cv2.cvtColor(crop[y:y + h, x:x + w], cv2.COLOR_BGR2GRAY)
+    bands = [b for b in _ink_bands(panel) if (b[1] - b[0]) >= MIN_GLYPH_PX]
+    if len(bands) < 2:
+        return ScaleRefusal(
+            reason="The printed rows on the tag could not be measured - "
+                   "retake the photo straight on, in better light.",
+            detail=f"found {len(bands)} ink band(s), need at least 2")
+
+    # The two digit rows are the widest ink bands - wider than the barcode.
+    bands.sort(key=lambda b: -b[2])
+    cand = sorted(bands[:3], key=lambda b: -(b[1] - b[0]))
+    tall = cand[0]
+    short = next((b for b in cand[1:] if (b[1] - b[0]) > 0), None)
+    tall_px = float(tall[1] - tall[0])
+    if short is None:
+        return ScaleRefusal(reason="Only one printed row was found on the tag.",
+                            detail="need both digit rows to cross-check")
+    short_px = float(short[1] - short[0])
+
+    # the free validity check: 18 mm over 10 mm must measure near 1.8:1
+    ratio = tall_px / max(short_px, 1e-6)
+    if abs(ratio - DIGIT_ROW_RATIO) > DIGIT_ROW_RATIO_TOL * DIGIT_ROW_RATIO:
+        return ScaleRefusal(
+            reason="The tag's printed rows do not match the expected NDDB "
+                   "layout - the scale would not be trustworthy.",
+            detail=f"row height ratio {ratio:.2f}, expected "
+                   f"{DIGIT_ROW_RATIO:.2f} +/-"
+                   f"{DIGIT_ROW_RATIO_TOL * DIGIT_ROW_RATIO:.2f}")
+
+    cm_per_px = (DIGIT_LINE_MM / 10.0) / tall_px
+
+    # HARD GATE: does the panel come out the size a real tag is?
+    #
+    # This is the check that caught a wrong answer during development. The
+    # ratio test passed at 2.20 because the "tall row" was the dark ear above
+    # the panel rather than a digit row, and the scale came out 25% small.
+    # The panel width is a completely independent quantity, so it catches the
+    # class of error the ratio cannot.
+    #
+    # NDDB gives 55-69 mm. Allowing 45-85 mm leaves room for the detector's
+    # box padding and a tilted tag while still rejecting anything that would
+    # corrupt a scorecard.
+    panel_cm = w * cm_per_px
+    if not (4.5 <= panel_cm <= 8.5):
+        return ScaleRefusal(
+            reason="The ear tag scale did not check out against the tag's "
+                   "own size - retake the photo straight on.",
+            detail=f"implied panel width {panel_cm:.1f} cm; a real NDDB tag "
+                   f"is 5.5-6.9 cm, so this scale would be wrong by roughly "
+                   f"{abs(100 * (panel_cm - 6.2) / 6.2):.0f}%")
+    # confidence from glyph size (quantisation) and how well the ratio held
+    size_conf = float(np.clip((tall_px - MIN_GLYPH_PX) / 30.0, 0.0, 1.0))
+    ratio_conf = float(np.clip(
+        1.0 - abs(ratio - DIGIT_ROW_RATIO) / (DIGIT_ROW_RATIO_TOL
+                                              * DIGIT_ROW_RATIO), 0.0, 1.0))
+    return ScaleResult(
+        cm_per_px=cm_per_px,
+        confidence=round(0.5 * size_conf + 0.5 * ratio_conf, 3),
+        method="digit_row_18mm",
+        button_axes_px=(tall_px, short_px),
+        circularity=ratio,
+        note=("digit row only {:.0f}px tall - scale error is roughly {:.0f}%; "
+              "move closer".format(tall_px, 100.0 / tall_px)
+              if tall_px < 18 else ""),
+    )
