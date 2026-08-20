@@ -17,7 +17,10 @@ from ml.pose_features.embedding_extractor import (
     to_contract_fields,
     verify_breed,
 )
-from ml.pose_features.silhouette_landmarks import add_derived_landmarks
+from ml.pose_features.silhouette_landmarks import (
+    add_derived_landmarks,
+    add_rear_view_landmarks,
+)
 from ml.pose_features.pose_extractor import (
     PoseBackendError,
     extract_keypoints,
@@ -180,6 +183,33 @@ def score_animal(
                         keypoints, mask, animal_bbox)
             except Exception:
                 pass          # segmentation is a bonus, never a blocker
+
+            # ---- the REAR photo -------------------------------------------
+            # Ten of the eleven still-blocked traits are udder or teat traits
+            # and every one of them is view "rear". The app captures a rear
+            # photo; the pipeline was never running pose on it, so those
+            # joints could not appear even once they are annotated.
+            #
+            # Rear coordinates live in the REAR image's frame. Every udder
+            # trait is measured entirely within that view, so that is fine -
+            # but they must never be mixed into a side-view distance, which
+            # is why only REAR_VIEW_JOINTS are merged.
+            try:
+                rear_det = detect_animal(rear_img)
+                if rear_det is not None:
+                    rear_kps = extract_keypoints(rear_img, rear_det.bbox)
+                    rear_mask = None
+                    try:
+                        from ml.detection.detector import segment_animal
+                        rm, rdeg = segment_animal(rear_img, rear_det.bbox)
+                        rear_mask = None if rdeg else rm
+                    except Exception:
+                        pass
+                    keypoints, rear_prov = add_rear_view_landmarks(
+                        keypoints, rear_kps, rear_mask, rear_det.bbox)
+                    derived_joints.update(rear_prov)
+            except Exception:
+                pass          # the rear view is additive, never a blocker
     except PoseBackendError as exc:
         pose_reason = f"pose_unavailable: {exc}"
 

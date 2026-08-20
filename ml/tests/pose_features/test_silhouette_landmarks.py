@@ -140,3 +140,82 @@ def test_an_already_detected_joint_is_never_overwritten():
     k2, prov = add_derived_landmarks(k, m, (40, 60, 360, 270))
     assert k2["chest_bottom"] == (123.0, 456.0, 0.9)
     assert "chest_bottom" not in prov
+
+
+# --- rear view -------------------------------------------------------------
+# Ten of the eleven blocked traits are udder/teat and every one is view "rear".
+# The pipeline was only ever running pose on the SIDE photo, so those joints
+# could not appear even once annotated. These pin the merge rules.
+
+from ml.pose_features.silhouette_landmarks import (  # noqa: E402
+    REAR_VIEW_JOINTS,
+    add_rear_view_landmarks,
+    derive_udder_floor,
+)
+
+
+def _rear_mask(w=300, h=400):
+    """A rear-on cow: body block, two hind legs, an udder hanging centrally."""
+    m = np.zeros((h, w), np.uint8)
+    m[60:230, 70:230] = 255          # rump / body
+    m[230:360, 80:120] = 255         # left hind leg
+    m[230:360, 180:220] = 255        # right hind leg
+    m[230:300, 125:175] = 255        # udder, central and lower
+    return m
+
+
+def test_udder_floor_is_the_udder_not_a_hind_leg():
+    """The legs reach further down than the udder.
+
+    This is the same failure the side-view derivation hit with hooves, so the
+    search is restricted to the middle of the animal where the udder is.
+    """
+    m = _rear_mask()
+    out = derive_udder_floor(m, (70, 60, 230, 360))
+    assert out is not None
+    x, y, conf = out
+    assert 290 <= y <= 305, f"udder floor at {y}, expected the udder bottom ~300"
+    assert y < 355, "must not be a hoof"
+    assert 120 <= x <= 180, "must be central"
+
+
+def test_an_udder_floor_too_high_is_refused():
+    """If the lowest central mass sits in the top half, it is not an udder -
+    most likely the photo is not a rear view at all."""
+    m = np.zeros((400, 300), np.uint8)
+    m[60:120, 100:200] = 255          # a small high block, nothing below
+    assert derive_udder_floor(m, (70, 60, 230, 360)) is None
+
+
+def test_only_rear_view_joints_are_merged():
+    """A side-view joint must never be overwritten by a rear-view guess.
+
+    Rear coordinates are in the REAR image's frame. Mixing them into a
+    side-view distance would produce a confident, meaningless number.
+    """
+    side = {"withers": (100.0, 50.0, 0.8), "hoof_left": (90.0, 300.0, 0.7)}
+    rear = {"withers": (999.0, 999.0, 0.9),        # must be ignored
+            "udder_floor": (150.0, 300.0, 0.6),    # must be taken
+            "teat_rear_left": (140.0, 310.0, 0.5)}
+    out, prov = add_rear_view_landmarks(side, rear, None, None)
+    assert out["withers"] == (100.0, 50.0, 0.8), "side joint was overwritten"
+    assert out["udder_floor"] == (150.0, 300.0, 0.6)
+    assert prov["udder_floor"] == "detected_in_rear_view"
+
+
+def test_every_merged_joint_is_an_udder_or_teat_joint():
+    for j in REAR_VIEW_JOINTS:
+        assert "udder" in j or "teat" in j or j == "vulva_base", j
+
+
+def test_rear_merge_is_a_no_op_without_a_rear_photo():
+    side = {"withers": (100.0, 50.0, 0.8)}
+    out, prov = add_rear_view_landmarks(side, None, None, None)
+    assert out == side
+    assert prov == {}
+
+
+def test_derived_udder_floor_is_marked_and_low_confidence():
+    out, prov = add_rear_view_landmarks({}, None, _rear_mask(), (70, 60, 230, 360))
+    assert prov.get("udder_floor") == "derived_from_rear_silhouette"
+    assert out["udder_floor"][2] <= DERIVED_CONFIDENCE_CAP
