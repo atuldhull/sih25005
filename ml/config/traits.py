@@ -119,25 +119,35 @@ CONTRACT_TRAITS = [
         "category": "Feet & Legs",
         "trait_class": "A",
         "view": "side",
-        "required_keypoints": ["hip_bone_left", "hip_bone_right", "hock_left", "hock_right"],
+        # Contract defines Rear Legs Set as the SIDE-VIEW hock angle, not the
+        # rear-view hip->hock cow-hock deviation (that geometry now belongs to
+        # rear_legs_rear_view below). Reuses the exact 3-point geometry already
+        # used internally by INTERNAL_EXTRA_TRAITS "hock_angle"
+        # (knee_left -> hock_left -> pastern_left).
+        "required_keypoints": ["knee_left", "hock_left", "pastern_left"],
         "required_scale": False,
         "unit": "degrees",
         "smal_fallback": True,
-        # NOTE: Fix #2 in REVIEW-ml-dev.md - geometry currently pairs the wrong joints,
-        # producing false-confident scores for cow-hocked animals. Recompute as per-leg
-        # deviation from vertical (average left/right) in measurement/traits.py.
         "species_variants": ["cattle", "buffalo"],
     },
     {
         "trait_id": "rear_legs_rear_view",
         "name": "Rear Legs Rear View",
         "category": "Feet & Legs",
-        "trait_class": "B",
-        "view": "video",
-        # TODO: requires gait/video keypoint tracking, not yet implemented.
-        "required_keypoints": ["hock_left", "hock_right"],
+        # Was "B" (ratio) with only 2 keypoints - structurally unmeasurable
+        # (needs 4 points for _compute_ratio) and the wrong class for this
+        # geometry anyway. Now hosts the hip->hock cow-hock deviation-from-
+        # -vertical angle (previously mis-attached to rear_legs_set above),
+        # which is an angle computation, so trait_class must be "A" to route
+        # through the correct branch in measurement/traits.py.
+        "trait_class": "A",
+        # Was "video" (this trait previously assumed gait/video tracking was
+        # required). The cow-hock deviation geometry is static per-frame
+        # rear-image geometry, not motion tracking, so "rear" is correct.
+        "view": "rear",
+        "required_keypoints": ["hip_bone_left", "hip_bone_right", "hock_left", "hock_right"],
         "required_scale": False,
-        "unit": "ratio",
+        "unit": "degrees",
         "smal_fallback": False,
         "species_variants": ["cattle", "buffalo"],
     },
@@ -147,7 +157,12 @@ CONTRACT_TRAITS = [
         "category": "Feet & Legs",
         "trait_class": "A",
         "view": "side",
-        "required_keypoints": ["hock_left", "pastern_left", "hoof_left"],
+        # 2 points (not 3): _compute_angle()'s 2-point branch returns the
+        # pastern->hoof line's angle from horizontal, which is what Foot
+        # Angle needs. 3 points would route into the interior-vertex-angle
+        # branch instead (the wrong geometry - that measured the interior
+        # pastern joint angle, not the pastern-to-hoof angle vs horizontal).
+        "required_keypoints": ["pastern_left", "hoof_left"],
         "required_scale": False,
         "unit": "degrees",
         "smal_fallback": True,
@@ -283,7 +298,7 @@ CONTRACT_TRAITS = [
         "trait_class": "SMAL",
         "view": "side",
         # TODO: requires SMAL mesh fit over pelvis/tailhead surface shape.
-        "required_keypoints": ["pin_left", "pin_right", "tailhead"],
+        "required_keypoints": ["pin_left", "pin_right", "tail_head"],
         "required_scale": False,
         "unit": "score",
         "smal_fallback": True,

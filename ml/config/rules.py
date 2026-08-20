@@ -31,11 +31,10 @@ SPECIES_RULES = {
         "hock_angle": {"min": 130.0, "max": 160.0, "bins": _bins(130.0, 160.0)},
         # RENAMED from pastern_angle -> foot_angle to match contract trait name.
         "foot_angle": {"min": 40.0, "max": 65.0, "bins": _bins(40.0, 65.0)},
-        # RENAMED from rear_leg_set -> rear_legs_set to match contract trait name.
-        # NOTE (REVIEW-ml-dev.md, Fix #2): the underlying geometry for this trait
-        # is degenerate (wrong joint pairing) - fine to keep this rule table as-is,
-        # the bug is in measurement/traits.py, not here.
-        "rear_legs_set": {"min": -10.0, "max": 10.0, "bins": _bins(-10.0, 10.0)},
+        # Rear Legs Set now uses the same side-view hock-angle geometry as
+        # "hock_angle" above (knee->hock->pastern) - reuses that trait's
+        # already-calibrated range rather than inventing a new one.
+        "rear_legs_set": {"min": 130.0, "max": 160.0, "bins": _bins(130.0, 160.0)},
         "fore_leg_set": {"min": -8.0, "max": 8.0, "bins": _bins(-8.0, 8.0)},
         "shoulder_angle": {"min": 45.0, "max": 65.0, "bins": _bins(45.0, 65.0)},
         # NEW - no real reference range exists yet. Placeholder only; do not treat
@@ -54,7 +53,11 @@ SPECIES_RULES = {
         "central_ligament": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
         "front_teat_placement": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
         "rear_teat_placement": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
-        "rear_legs_rear_view": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        # Rear Legs Rear View now hosts the hip->hock cow-hock deviation-from-
+        # vertical angle (previously mis-attached to rear_legs_set) - migrated
+        # this range from that entry rather than inventing a new one, since it
+        # was already calibrated for this exact geometry's output.
+        "rear_legs_rear_view": {"min": -10.0, "max": 10.0, "bins": _bins(-10.0, 10.0)},
         # ---------------- Class C: measurements (cm) ----------------
         "heart_girth": {"min": 130.0, "max": 220.0, "bins": _bins(130.0, 220.0)},
         "body_length": {"min": 100.0, "max": 180.0, "bins": _bins(100.0, 180.0)},
@@ -88,7 +91,9 @@ SPECIES_RULES = {
         "rump_angle": {"min": 0.0, "max": 16.0, "bins": _bins(0.0, 16.0)},
         "hock_angle": {"min": 132.0, "max": 162.0, "bins": _bins(132.0, 162.0)},
         "foot_angle": {"min": 42.0, "max": 67.0, "bins": _bins(42.0, 67.0)},
-        "rear_legs_set": {"min": -10.0, "max": 10.0, "bins": _bins(-10.0, 10.0)},
+        # Rear Legs Set now uses the side-view hock-angle geometry - reuses
+        # "hock_angle"'s already-calibrated range above (buffalo: 132-162).
+        "rear_legs_set": {"min": 132.0, "max": 162.0, "bins": _bins(132.0, 162.0)},
         "fore_leg_set": {"min": -8.0, "max": 8.0, "bins": _bins(-8.0, 8.0)},
         "shoulder_angle": {"min": 45.0, "max": 65.0, "bins": _bins(45.0, 65.0)},
         "angularity": {"min": 10.0, "max": 35.0, "bins": _bins(10.0, 35.0)},
@@ -106,7 +111,10 @@ SPECIES_RULES = {
         # physical teat is used - that resolution happens in measurement/traits.py.
         "front_teat_placement": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
         "rear_teat_placement": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
-        "rear_legs_rear_view": {"min": 0.0, "max": 1.0, "bins": _bins(0.0, 1.0)},
+        # Rear Legs Rear View now hosts the hip->hock cow-hock deviation angle -
+        # migrated this range from the buffalo rear_legs_set entry above
+        # (same value as cattle's, since both used the identical geometry).
+        "rear_legs_rear_view": {"min": -10.0, "max": 10.0, "bins": _bins(-10.0, 10.0)},
         # ---------------- Class C: measurements (cm; buffalo larger) ----------------
         "heart_girth": {"min": 150.0, "max": 240.0, "bins": _bins(150.0, 240.0)},
         "body_length": {"min": 115.0, "max": 195.0, "bins": _bins(115.0, 195.0)},

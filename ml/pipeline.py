@@ -31,7 +31,11 @@ def score_animal(
     the frozen contract/scoring_result.json shape (pipeline mode) via
     to_contract_dict() - NOT the internal ScoringResult shape.
     """
-    animal_id = animal_record.get("animal_id")
+    # Real BPA records from server/seed.py key the animal by "_id", not
+    # "animal_id" - fall back so real server records resolve correctly
+    # instead of always returning None (verified: server/main.py passes
+    # the raw MongoDB document straight through as animal_record).
+    animal_id = animal_record.get("animal_id") or animal_record.get("_id")
     species = animal_record.get("species", "cattle")
 
     # `captured` reflects whether an input was PROVIDED to this call, not

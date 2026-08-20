@@ -2,7 +2,7 @@ import os
 import re
 import time
 from collections import defaultdict, deque
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -220,6 +220,19 @@ def create_session(
     result["session_id"] = device_session_id
     result["eligible"] = eligible
     result["eligible_reason"] = reason
+    # captured_at is server-injected per result_builder.py's division of
+    # labor - the real pipeline path left it None (honest: it doesn't know
+    # wall-clock time), and this handler wasn't setting it either, so it
+    # never reached the app. The fake engine (scoring.py) already sets this;
+    # match that here so both engines behave the same way.
+    result["captured_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    # breed_verified intentionally left as whatever score_animal() returned
+    # (currently always None): verifying breed requires Tag Intelligence
+    # (ml/tag_intelligence/tag_reader.py), which is not implemented yet.
+    # There is no real verification signal anywhere in this handler or in
+    # server/seed.py to set it from - animal records only carry the BPA-
+    # registered "breed", not a visually-verified one. Setting it to
+    # anything but None here would be fabricating a value.
 
     # screening layer: deterministic risk estimation from the symptom
     # vector (Person 2's detectors fill it; the VKG reasons over it)
@@ -248,12 +261,20 @@ def create_session(
         })
 
     weight = result["weight_kg"]
+    # weight_kg.low/high are honestly None when the pipeline can't measure
+    # weight (e.g. Heart Girth requires a 3D model that doesn't exist yet) -
+    # do not fabricate a midpoint; store None rather than crashing on
+    # None + None.
+    if weight.get("low") is not None and weight.get("high") is not None:
+        weight_kg_mid = (weight["low"] + weight["high"]) // 2
+    else:
+        weight_kg_mid = None
     try:
         db.sessions.insert_one({
             "session_id": device_session_id,
             "animal_id": animal_id,
             "date": date.today().isoformat(),
-            "weight_kg_mid": (weight["low"] + weight["high"]) // 2,
+            "weight_kg_mid": weight_kg_mid,
             "health_flags": result["health_flags"],
             "files": saved,
             "result": dict(result),

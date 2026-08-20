@@ -3,7 +3,7 @@
 import os
 from typing import List
 
-import cv2
+from ml.detection.detector import DetectionBackendError
 
 BLUR_VARIANCE_THRESHOLD = 100.0
 MIN_WIDTH = 640
@@ -14,10 +14,27 @@ MIN_FRAMES = 30
 FRAME_SAMPLE_INTERVAL = 10
 
 
+def _get_cv2():
+    """Lazily import cv2 (see ml/detection/detector.py's _get_cv2 for why:
+    this module previously imported cv2 at module scope too, which
+    independently blocked `import ml.pipeline` from succeeding without cv2
+    installed, even after detector.py's own fix). Reuses
+    DetectionBackendError so both modules signal the same failure mode."""
+    try:
+        import cv2
+        return cv2
+    except ImportError as exc:
+        raise DetectionBackendError(
+            "'opencv-python' (cv2) is not installed. Install it with "
+            "`pip install opencv-python` to use image/video quality validation."
+        ) from exc
+
+
 def _load_image(image_path: str):
     """Read an image file, returning (image, None) or (None, reason) on failure."""
     if not os.path.exists(image_path):
         return None, "file_not_found"
+    cv2 = _get_cv2()
     image = cv2.imread(image_path)
     if image is None:
         return None, "unreadable_image"
@@ -26,12 +43,14 @@ def _load_image(image_path: str):
 
 def _blur_score(image) -> float:
     """Return Laplacian variance; lower values indicate more blur."""
+    cv2 = _get_cv2()
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
 def _brightness_mean(image) -> float:
     """Return mean pixel brightness in the standard 0-255 gamma space."""
+    cv2 = _get_cv2()
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return float(gray.mean())
 
@@ -88,6 +107,7 @@ def validate_video(video_path: str) -> dict:
     if not os.path.exists(video_path):
         return {"passed": False, "reasons": ["file_not_found"], "metrics": {}}
 
+    cv2 = _get_cv2()
     capture = cv2.VideoCapture(video_path)
     if not capture.isOpened():
         return {"passed": False, "reasons": ["unreadable_video"], "metrics": {}}
@@ -135,6 +155,7 @@ def validate_video(video_path: str) -> dict:
 
 def _count_frames(capture) -> int:
     """Count frames by reading through the capture when the metadata is missing."""
+    cv2 = _get_cv2()
     count = 0
     capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
     while True:

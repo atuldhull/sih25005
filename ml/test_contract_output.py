@@ -26,8 +26,8 @@ keypoints = {
     "chest_bottom": (300, 380, 0.90),
     "chest_front": (160, 340, 0.91),
     "back_mid": (430, 140, 0.88),
-    "tail_head": (600, 170, 0.85),  # NOTE: registry's new BCS trait expects "tailhead"
-                                     # (no underscore) - naming mismatch, flagged not fixed.
+    "tail_head": (600, 170, 0.85),  # registry's BCS trait now correctly requires
+                                     # "tail_head" (underscore) matching this schema key.
     "shoulder_left": (220, 210, 0.90),
     "shoulder_right": (260, 210, 0.89),
     "hip_bone_left": (520, 180, 0.92),

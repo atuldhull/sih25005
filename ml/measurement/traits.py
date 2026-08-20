@@ -41,6 +41,25 @@ def _pixel_distance(a: Keypoint, b: Keypoint) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
+def _pixel_vertical_distance(a: Keypoint, b: Keypoint) -> float:
+    """Vertical-only (y-axis) pixel distance, for traits whose definition is a
+    height rather than a diagonal/straight-line distance (e.g. Stature, Body
+    Depth). Using full Euclidean distance for these overstates the true
+    height whenever the two keypoints aren't perfectly vertically aligned in
+    the image (any camera roll, or the hoof/chest point not sitting directly
+    under the withers point).
+
+    NOTE: this does not correct for camera roll/tilt - it only drops the
+    horizontal component. True roll correction (rotating both points into a
+    level frame before taking the vertical delta) would need a reference
+    signal for "level" (e.g. device orientation at capture time, or two
+    ground-contact keypoints to establish the image's horizon) that does not
+    exist anywhere in this pipeline yet - not implemented, flagged as a
+    follow-up rather than guessed at here.
+    """
+    return abs(a[1] - b[1])
+
+
 def _compute_angle(points: List[Keypoint]) -> Optional[float]:
     """Angle in degrees from reduced points.
 
@@ -111,6 +130,15 @@ def _compute_distance(points: List[Keypoint], scale_factor: float) -> Optional[f
     return _pixel_distance(points[0], points[1]) * scale_factor
 
 
+def _compute_vertical_distance(points: List[Keypoint], scale_factor: float) -> Optional[float]:
+    """Vertical-only pixel distance between the first two points, scaled into
+    cm. See _pixel_vertical_distance for why this differs from
+    _compute_distance for height-type traits (Stature, Body Depth)."""
+    if len(points) < 2:
+        return None
+    return _pixel_vertical_distance(points[0], points[1]) * scale_factor
+
+
 def measure_trait(
     trait_id: str,
     keypoints: Dict[str, Tuple[float, float, float]],
@@ -155,14 +183,42 @@ def measure_trait(
         )
 
     if trait_class == "A":
-        if trait_id == "rear_legs_set":
+        if trait_id == "rear_legs_rear_view":
+            # Rear Legs Rear View: rear-view cow-hock deviation-from-vertical,
+            # per-leg (see _compute_leg_set_angle's docstring). This geometry
+            # was previously mis-attached to rear_legs_set; rear_legs_set now
+            # uses the generic 3-point side-view hock angle below instead.
             value = _compute_leg_set_angle(points)
         else:
             value = _compute_angle(points)
     elif trait_class == "B":
         value = _compute_ratio(points)
+    elif trait_class == "SMAL":
+        # SMAL traits (Heart Girth, Body Condition Score) require a 3D mesh
+        # fit and are not derivable from a single 2D distance/angle. Refuse
+        # honestly instead of falling through to the Class C distance branch,
+        # which previously either crashed (TypeError on `distance * None`
+        # when unscaled) or silently returned a wrong-shape value (a flat 2D
+        # chord standing in for a circumference, or a length standing in for
+        # a 1-9 index).
+        return MeasurementResult(
+            trait_id=trait_id,
+            trait_class=trait_class,
+            value=None,
+            unit=unit,
+            confidence=0.0,
+            flags=["not_measurable", "requires_3d_model"],
+        )
     else:  # Class C
-        value = _compute_distance(points, scale_factor)
+        if trait_id in ("stature", "body_depth"):
+            # Both are height measurements per the trait definition, not
+            # diagonal/straight-line distances (unlike e.g. Body Length,
+            # which is genuinely front-to-back and correctly uses the full
+            # 2D distance). See _pixel_vertical_distance for why Euclidean
+            # distance overstates height here.
+            value = _compute_vertical_distance(points, scale_factor)
+        else:
+            value = _compute_distance(points, scale_factor)
 
     if value is None:
         return MeasurementResult(

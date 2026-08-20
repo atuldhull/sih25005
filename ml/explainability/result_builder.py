@@ -222,7 +222,7 @@ def to_contract_dict(
                 "ci": None,
                 "measure_class": trait_def["trait_class"],
                 "view": trait_def["view"],
-                "overlay_points": [list(p) for p in overlay["points"]],
+                "overlay_points": [[int(round(p[0])), int(round(p[1]))] for p in overlay["points"]],
                 "explanation": explanation,
             }
         )
