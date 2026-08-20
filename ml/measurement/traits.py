@@ -1,4 +1,4 @@
-﻿"""Measurement engine: computes trait measurements from keypoints using pure geometry."""
+"""Measurement engine: computes trait measurements from keypoints using pure geometry."""
 
 import math
 from typing import Dict, List, Optional, Tuple
@@ -139,6 +139,39 @@ def _compute_vertical_distance(points: List[Keypoint], scale_factor: float) -> O
     return _pixel_vertical_distance(points[0], points[1]) * scale_factor
 
 
+
+# Physically impossible measurements, by unit. These are NOT "unusual" bounds -
+# the ICAR 1-9 scale exists precisely to describe biological extremes, and
+# suppressing a real extreme would defeat the whole scorecard. These are the
+# limits outside which a value cannot describe a bovine at all.
+#
+# Why this is needed: a degenerate keypoint pair (two joints predicted at
+# almost the same pixel) produces a tiny distance that scales to something
+# like a 0.5 cm chest width. Nothing downstream caught that - config/traits.py
+# defines no ranges - so it reached scoring as if it were a real measurement.
+# Showing a farmer a 0.5 cm chest is exactly what score=null and
+# not_scored_reason exist to prevent.
+IMPOSSIBLE_OUTSIDE = {
+    # 1 cm, not 5: teat length is about 5 cm and teat thickness 2-3 cm, so a
+    # 5 cm floor would have refused real udder traits. Caught by
+    # test_keypoint_schema's interop test, which is exactly what it is for.
+    "cm": (1.0, 300.0),
+    "degrees": (-180.0, 180.0),
+    "ratio": (0.0, 20.0),
+}
+
+
+def _is_impossible(value, unit):
+    """True when a value cannot describe a real animal, so must be refused."""
+    if value is None:
+        return False
+    bounds = IMPOSSIBLE_OUTSIDE.get(unit)
+    if bounds is None:
+        return False
+    lo, hi = bounds
+    return not (lo <= float(value) <= hi)
+
+
 def measure_trait(
     trait_id: str,
     keypoints: Dict[str, Tuple[float, float, float]],
@@ -233,6 +266,20 @@ def measure_trait(
     confidence = sum(confidences) / len(confidences)
     if trait_class == "C":
         confidence *= scale_confidence
+
+    # Refuse rather than report a value that cannot describe an animal. This
+    # happens when two keypoints collapse onto nearly the same pixel, or when
+    # the scale is wrong by an order of magnitude - both of which produce a
+    # confident-looking number rather than an obvious failure.
+    if _is_impossible(value, unit):
+        return MeasurementResult(
+            trait_id=trait_id,
+            trait_class=trait_class,
+            value=None,
+            unit=unit,
+            confidence=0.0,
+            flags=["not_measurable", "implausible_value"],
+        )
 
     return MeasurementResult(
         trait_id=trait_id,
