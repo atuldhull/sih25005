@@ -39,6 +39,7 @@ def score_animal(
     rear_img: str,
     video_path: Optional[str],
     animal_record: Dict[str, object],
+    tag_img: Optional[str] = None,
 ) -> dict:
     """Top-level entrypoint per architecture Section 6/15.
 
@@ -94,10 +95,36 @@ def score_animal(
         return _build_not_scored(animal_id, species, "no_animal_detected", quality_passed, captured)
 
     animal_bbox = animal_detection.bbox
+
+    # The ear tag is found on the CLOSE-UP tag photo, not the side photo.
+    # Measured on this checkpoint: a close-up of a tag scores 0.84, while the
+    # best ear_tag proposal across 29 whole-animal photos was 0.02 against a
+    # 0.5 threshold. A tag on a standing animal is a handful of pixels; the
+    # detector was never going to see it there, and asking it to is why the
+    # centimetre scale never appeared.
+    #
+    # The app already captures this separately (ScanTagScreen), so the photo
+    # exists - it just has to reach here. tag_img is optional so the existing
+    # four-argument call in scoring_loader keeps working; without it we still
+    # try the side photo, which costs one forward pass and almost always
+    # returns None.
+    tag_source = tag_img or side_img
+    tag_bbox = None
+    tag_from_closeup = tag_img is not None
     try:
-        tag_detection = detect_ear_tag(side_img, animal_bbox)
+        tag_animal = animal_bbox
+        if tag_from_closeup:
+            # On a close-up the "animal" box is the ear filling the frame, so
+            # containment against the SIDE photo's animal box would reject
+            # every tag. Constrain to the tag photo's own frame instead.
+            from PIL import Image as _Image
+            with _Image.open(tag_source) as _im:
+                tag_animal = (0.0, 0.0, float(_im.width), float(_im.height))
+        tag_detection = detect_ear_tag(tag_source, tag_animal)
         tag_bbox = tag_detection.bbox if tag_detection is not None else None
     except (DetectionBackendError, DetectionLabelError):
+        tag_bbox = None
+    except Exception:
         tag_bbox = None
 
     # ---- Stage 3: Tag Intelligence -> a centimetre scale -------------------
@@ -114,7 +141,9 @@ def score_animal(
     if tag_bbox is not None:
         try:
             from ml.detection.detector import _get_cv2
-            image_bgr = _get_cv2().imread(side_img)
+            # read the image the tag was actually found in, or the button
+            # ellipse would be measured against the wrong pixels
+            image_bgr = _get_cv2().imread(tag_source)
             if image_bgr is not None:
                 tag_result = read_tag(image_bgr, tag_bbox)
                 scale_factor, scale_confidence = scale_factor_from(tag_result)

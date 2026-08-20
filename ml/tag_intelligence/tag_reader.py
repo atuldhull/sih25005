@@ -35,6 +35,39 @@ from typing import Any, Dict, Optional, Sequence
 from ml.config.models import TAG_SCALE_METHOD
 
 
+# KNOWN LIMITATION, found by running this on a real NDDB tag photo
+# ---------------------------------------------------------------
+# The 27 mm button is on the BACK of the tag - the disc that sits behind the
+# ear. A photo of the tag FRONT (the yellow panel with "IND 23" and the
+# 12-digit number, which is what a field officer naturally photographs) shows
+# only the small attachment stud, roughly 6 mm. Measuring that stud as if it
+# were the 27 mm button would report a scale about 4.5x too small, and every
+# centimetre trait would inherit it.
+#
+# So on a front-facing tag photo this module correctly REFUSES rather than
+# returning a confident wrong number. That refusal is why class-C traits
+# currently report not_scored_reason; the class-A angle traits are unaffected
+# because angles need no scale.
+#
+# Two ways forward, in order of preference:
+#
+#   1. Use an invariant PRINTED feature, which is visible from the front.
+#      config/tag_spec.py already carries digit_line_cm = 1.8 and
+#      barcode_line_cm = 1.0, and its comment states these do not vary by
+#      manufacturer while the outer panel does (55-69 mm). This is the right
+#      answer - but it is NOT implemented here, because "digit_line_cm = 1.8"
+#      is ambiguous between the height of the digit row and its width, and
+#      those differ by roughly 5x. Getting it wrong would be indistinguishable
+#      from getting it right, which is exactly the failure this module exists
+#      to avoid. Confirm which dimension it means before implementing.
+#
+#   2. Capture the tag back. Reliable, since the 27 mm button is then face-on,
+#      but it asks the officer to photograph the far side of the ear.
+#
+# Detection itself is fine: the tag is found on a close-up at 0.84 confidence.
+# It is only the SCALE that is unavailable from the front.
+
+
 class TagScaleRefused(Exception):
     """Carries the reason a scale could not be measured, for the farmer."""
 
