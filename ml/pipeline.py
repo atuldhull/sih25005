@@ -484,11 +484,13 @@ def score_animal(
     # than changing them. These keys are ADDITIVE: the app ignores unknown
     # keys safely today, and can render them once Person 1 is ready. That is
     # what lets us ship an honest breed signal without a contract change.
-    contract.update(_breed_extra(breed_fields))
+    contract.update(_breed_extra(
+        breed_fields, vet_screened=bool(screen_result.get("screened", False))))
     return contract
 
 
-def _breed_extra(breed_fields: Optional[Dict[str, object]]) -> dict:
+def _breed_extra(breed_fields: Optional[Dict[str, object]],
+                 vet_screened: bool = False) -> dict:
     """The additive verification keys, with None for anything unmeasured.
 
     Always the same key set, whether or not the model ran - a field that
@@ -504,6 +506,13 @@ def _breed_extra(breed_fields: Optional[Dict[str, object]]) -> dict:
         "group_confidence": f.get("group_confidence"),
         "group_consistent": f.get("group_consistent"),
         "group_reliable": f.get("group_reliable"),
+        # Whether a veterinary screening actually ran. This build has no
+        # trained symptom detector, so it never does - and an empty
+        # symptom_vector therefore means NOT SCREENED, not healthy. Without
+        # this flag the reports had no way to tell those apart, and said
+        # "No health problems were flagged" to a farmer who had not been
+        # screened at all.
+        "vet_screened": bool(vet_screened),
         "breed_verify_note": f.get("breed_verify_note"),
     }
 

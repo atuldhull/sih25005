@@ -416,8 +416,9 @@ def create_session(
                                 "village": animal["village"],
                                 "animals_affected_14d": others + 1})
     result["herd_alerts"] = herd_alerts
-    result["reports"] = reports.build_reports(animal, risks,
-                                              result["symptom_vector"], herd_alerts)
+    result["reports"] = reports.build_reports(
+        animal, risks, result["symptom_vector"], herd_alerts,
+        screened=bool(result.get("vet_screened", False)))
     result["escalated"] = vkg.needs_escalation(risks) or bool(herd_alerts)
     if result["escalated"]:
         # upsert by session_id: a retried upload refreshes its own alert

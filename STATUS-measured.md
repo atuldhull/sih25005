@@ -150,16 +150,22 @@ Each of these produced no error, which is why they lasted:
 - a breed. The exact-breed head measured 38.1% source-held-out and disables
   itself; the group head (80.2%, against a 60.7% background-only control) ships
   instead. `breed_verified: false` means NOT CHECKED, never contradicted
+- a clean bill of health. This build has no trained symptom detector, so the
+  screening never runs - and an empty symptom list was being reported to the
+  farmer as "No health problems were flagged" and to the vet officer as
+  "Detected signs: none". Both read as a clinical finding on an animal nothing
+  had examined
 - a tag that is not NDDB-spec. The handwritten management tag on a real
   photograph was refused, correctly, with an actionable reason
 
 ## Tests
 
-    394   ml/tests
-      9   server suites (test_app_contract, test_session, test_demo,
+    395   ml/tests
+     10   server suites (test_app_contract, test_session, test_demo,
           test_concurrency, test_vkg, test_rag, test_chat, test_providers,
-          test_voice)
-     38   server/test_demo_ui.js — the console's wording and styling
+          test_voice, test_reports_not_screened)
+     38   server/test_demo_ui.js
+ — the console's wording and styling
 
 ## What is needed from people, not from code
 

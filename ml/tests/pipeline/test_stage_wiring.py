@@ -10,6 +10,12 @@ ADDITIVE_KEYS = [
     "predicted_species", "species_confidence", "species_consistent",
     "predicted_group", "group_confidence", "group_consistent",
     "group_reliable", "breed_verify_note",
+    # Whether a veterinary screening actually ran. This build has no trained
+    # symptom detector, so it never does - and an empty symptom_vector
+    # therefore means NOT SCREENED, not healthy. Before this key existed the
+    # farmer's report said "No health problems were flagged from today's
+    # photos and video" to an animal nothing had examined.
+    "vet_screened",
 ]
 RECORD = {"animal_id": "356279812345", "_id": "356279812345",
           "species": "cattle", "breed": "Gir"}
@@ -18,6 +24,16 @@ RECORD = {"animal_id": "356279812345", "_id": "356279812345",
 def test_breed_extra_always_has_the_same_keys():
     for arg in (None, {}, {"predicted_group": "buffalo"}):
         assert set(_breed_extra(arg)) == set(ADDITIVE_KEYS)
+
+
+def test_vet_screened_defaults_to_false_on_the_refusal_path():
+    """A run that refused before reaching the screener has not screened.
+
+    The refusal path calls _breed_extra without the flag, so the default is
+    what a not-scored session reports - and it has to be the cautious one.
+    """
+    assert _breed_extra(None)["vet_screened"] is False
+    assert _breed_extra({}, vet_screened=True)["vet_screened"] is True
 
 
 def test_missing_models_degrade_instead_of_crashing():
