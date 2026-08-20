@@ -186,6 +186,26 @@ def estimate_scale(image_bgr: np.ndarray, tag_bbox: Sequence[float]
                                / (1.0 - MIN_CIRCULARITY), 0.0, 1.0))
     confidence = round(0.5 * size_conf + 0.5 * round_conf, 3)
 
+    # SAME PANEL GATE THE DIGIT METHOD USES.
+    #
+    # The button method had no cross-check at all, and on a real ear-tag
+    # photograph it returned a scale implying an 11.4 cm panel - a real NDDB
+    # tag is 6.5-6.9 cm. It had fitted an ellipse to something that was not
+    # the 27 mm button. A scale that wrong silently multiplies every
+    # centimetre trait, so it has to be caught here rather than trusted.
+    #
+    # Height, not width, for the same reason as the digit method: a tag
+    # turned away from the camera keeps its height and loses its width.
+    tag_h_px = abs(float(tag_bbox[3]) - float(tag_bbox[1]))
+    panel_cm = tag_h_px * cm_per_px
+    if tag_h_px > 0 and not (5.0 <= panel_cm <= 9.5):
+        return ScaleRefusal(
+            reason="The ear tag scale did not check out against the tag's "
+                   "own size - retake the photo straight on.",
+            detail=f"button gave a scale implying a {panel_cm:.1f} cm tag "
+                   f"height; a real NDDB tag is 6.5-6.9 cm, so the measured "
+                   f"circle was probably not the 27 mm button")
+
     note = ""
     if major < 20:
         note = ("button is only {:.0f} px across - scale error is roughly "
