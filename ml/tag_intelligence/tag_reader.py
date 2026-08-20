@@ -91,18 +91,42 @@ def measure_scale(image_bgr, tag_bbox: Sequence[float]) -> Dict[str, Any]:
     report not_scored_reason and the class-A angle traits still work, because
     angles need no scale at all.
     """
-    from ml.tag_intelligence.tag_ruler import (ScaleResult, estimate_scale,
+    from ml.tag_intelligence.tag_ruler import (DIGIT_SCALE_MIN_ERROR_FRAC,
+                                               ScaleResult, estimate_scale,
+                                               estimate_scale_from_digits,
                                                scale_error_fraction)
 
+    # The button first: it is a single object of a known 27 mm, which is the
+    # most direct ruler on the tag.
     res = estimate_scale(image_bgr, tag_bbox)
+    used_digits = False
+
     if not isinstance(res, ScaleResult):
-        raise TagScaleRefused(getattr(res, "reason", "scale unavailable"),
-                              getattr(res, "detail", ""))
+        # Then the printed rows. This method was written, validated against
+        # the published NDDB dimensions and covered by tests, and then never
+        # called - measure_scale only ever tried the button. That mattered
+        # more than it looks: per the spec the button is on the REAR of the
+        # ear, while the barcode and digit rows are printed on the FRONT. A
+        # farmer photographing a tag head-on, which is what the app's close-up
+        # screen asks for, gets a picture with no button in it at all.
+        button_refusal = res
+        res = estimate_scale_from_digits(image_bgr, tag_bbox)
+        used_digits = isinstance(res, ScaleResult)
+        if not used_digits:
+            # Report the button's reason: it is the more actionable of the two
+            # ("turn the tag to face the camera") and the one a farmer can act
+            # on without knowing anything about how this works.
+            raise TagScaleRefused(
+                getattr(button_refusal, "reason", "scale unavailable"),
+                getattr(button_refusal, "detail", ""))
+
+    err = (DIGIT_SCALE_MIN_ERROR_FRAC if used_digits
+           else float(scale_error_fraction(res)))
     return {
         "cm_per_px": float(res.cm_per_px),
         "confidence": float(res.confidence),
-        "error_frac": float(scale_error_fraction(res)),
-        "method": TAG_SCALE_METHOD,
+        "error_frac": float(err),
+        "method": res.method or TAG_SCALE_METHOD,
         "button_major_px": float(res.button_axes_px[0]),
         "circularity": float(res.circularity),
         "note": res.note or "",

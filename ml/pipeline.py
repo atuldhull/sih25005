@@ -171,6 +171,25 @@ def score_animal(
     except Exception:
         tag_bbox = None
 
+    if tag_bbox is None and tag_from_closeup:
+        # The detector is a single point of failure for the entire scale path,
+        # and it misses tags that are plainly there: on a 2560x1700 photograph
+        # with a legible yellow tag it returns nothing, and still nothing with
+        # the threshold dropped to 0.02 - the class does not fire at all.
+        # Everything measured in centimetres depends on this one call.
+        #
+        # On a CLOSE-UP that call is not needed. The photograph is of the tag;
+        # the frame IS the region of interest. Handing the ruler the whole
+        # frame is safe because the ruler is the real validator - it gates on
+        # the panel's height against the published 55-69 mm, on the round
+        # button, and on the 10/10/18 mm printed rows, and refuses anything
+        # that is not a conformant NDDB tag. A wrong box produces a refusal,
+        # not a wrong scale.
+        #
+        # Deliberately NOT done for the side photograph, where the tag is a
+        # small part of a large frame and the whole frame would be meaningless.
+        tag_bbox = tag_animal
+
     # ---- Stage 3: Tag Intelligence -> a centimetre scale -------------------
     # Scale comes from the tag's 27 mm round BUTTON, never the outer panel:
     # that panel is 55-69 mm depending on the supplier, so using it as a ruler
@@ -191,6 +210,37 @@ def score_animal(
             if image_bgr is not None:
                 tag_result = read_tag(image_bgr, tag_bbox)
                 scale_factor, scale_confidence = scale_factor_from(tag_result)
+
+                if tag_from_closeup and scale_factor is not None:
+                    # A SCALE BELONGS TO THE PHOTOGRAPH IT WAS MEASURED IN.
+                    #
+                    # The close-up and the side photograph are different shots
+                    # from different distances, so their centimetres-per-pixel
+                    # differ - typically by a factor of tens, because the tag
+                    # fills one frame and is a thumbnail in the other. Every
+                    # keypoint measured below is in SIDE-photo pixels. Handing
+                    # them the close-up's scale would multiply every class-C
+                    # trait by that factor, silently, and the numbers would
+                    # still look like plausible centimetres.
+                    #
+                    # Nothing downstream could catch it: the plausibility
+                    # guards would reject the absurd ones and the survivors
+                    # would be quietly wrong. So the close-up's scale is kept
+                    # for what it legitimately describes - that this is a
+                    # conformant tag, and its own measurements - and is NOT
+                    # applied to the body.
+                    #
+                    # Recovering a side-photo scale from a close-up is
+                    # possible in principle: the close-up gives this tag's
+                    # true panel size in cm, and the same panel measured in
+                    # the side photo would then give that photo's scale. It
+                    # needs the panel located in the side photo, and is not
+                    # built. Until it is, the honest answer is no scale.
+                    tag_result.setdefault(
+                        "scale_note",
+                        "measured in the close-up photo, which has its own "
+                        "pixel scale - not applied to body measurements")
+                    scale_factor, scale_confidence = None, 0.0
         except Exception as exc:  # never let the ruler kill the run
             tag_result = {"identity": None, "scale": None,
                           "refused_reason": f"tag_scale_failed: {exc}"}
