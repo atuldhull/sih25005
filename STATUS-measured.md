@@ -81,9 +81,23 @@ distance across two coordinate frames, producing 74.7 cm against a band of
 ## What the demo shows
 
 The adoption gate keeps the baseline engine unless the ML pipeline scores at
-least one contract trait. Measured over 46 photographs with no tag close-up,
-the pipeline scores at least one on **16 of them — 35%**. On the rest the
-baseline answers, and the baseline invents all twenty scores and a weight.
+least one contract trait. Measured over 46 side-only photographs with no tag
+close-up, the pipeline scores at least one on **9 of them — 20%**.
+
+That figure went DOWN, from 35%, and the fall is the point. Fifteen of those
+percentage points were `rear_legs_rear_view` scoring on perspective noise, and
+`foot_angle` being scored on a quantity whose error bar covered its whole band.
+What is left is `rear_legs_set`, which has a genuine lever arm — ±4° against a
+30°-wide band — and a median of 157.9 inside its 130–160 range. Fewer, and
+real.
+
+`rump_angle` was the remaining candidate and cannot be recovered either: the
+hook-to-pin span it measures comes out at 33.9% of the animal where a real one
+is 12–18%, so those landmarks are simply in the wrong place, and no
+reinterpretation of the angle fixes that. It refuses.
+
+This is a side-only measurement. In production the app always sends a rear
+photograph, which is what `rear_legs_rear_view` and `rump_width` need.
 
 That is disclosed: `engine` is in every response, and the console now says
 **DEMONSTRATION DATA — these scores were NOT measured** outright, rather than
