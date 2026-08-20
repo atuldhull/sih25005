@@ -82,12 +82,24 @@ def _brightness_mean(image) -> float:
 def _frame_metrics(image) -> dict:
     """Compute the raw quality metrics dict for a single frame."""
     height, width = image.shape[:2]
-    return {
+    metrics = {
         "blur_score": _blur_score(image),
         "brightness_mean": _brightness_mean(image),
         "width": int(width),
         "height": int(height),
     }
+    # A soft photograph and an empty one score the same on Laplacian variance
+    # and need opposite advice: one is worth keeping, the other means move
+    # closer or clean the lens. Telling them apart is a resolution question,
+    # not a contrast one - see ml/ingestion/deblur.py.
+    try:
+        from ml.ingestion.deblur import assess
+        report = assess(image)
+        metrics["sharpness_verdict"] = report.verdict
+        metrics["detail_rmse"] = round(report.detail_rmse, 2)
+    except Exception:
+        pass          # the extra detail is a bonus, never a blocker
+    return metrics
 
 
 # Which defects are worth REFUSING over, and which are worth recording.
@@ -126,6 +138,7 @@ def _frame_metrics(image) -> dict:
 # quality_passed still goes False, which flows into the not-scored reasons and
 # the eligibility calculation, so a soft photograph is reported as a soft
 # photograph rather than silently accepted.
+# Neither blur_too_high nor no_fine_detail appears here: both are advisory.
 FATAL_REASONS = frozenset({
     "file_not_found",
     "unreadable_image",
@@ -148,7 +161,14 @@ def _screen_metrics(metrics: dict) -> List[str]:
     """Return the list of failure reasons implied by a metrics dict."""
     reasons = []
     if metrics["blur_score"] < BLUR_VARIANCE_THRESHOLD:
-        reasons.append("blur_too_high")
+        # Both are advisory - neither stops the pipeline - but they mean
+        # different things to whoever took the photograph. "Soft" is worth
+        # keeping and usually still measures; "no detail" is a photograph
+        # taken too far away, or a thumbnail, and retaking it is the only fix.
+        if metrics.get("sharpness_verdict") == "no_detail":
+            reasons.append("no_fine_detail")
+        else:
+            reasons.append("blur_too_high")
     if metrics["brightness_mean"] < BRIGHTNESS_MIN:
         reasons.append("underexposed")
     elif metrics["brightness_mean"] > BRIGHTNESS_MAX:

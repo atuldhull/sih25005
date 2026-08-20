@@ -168,14 +168,45 @@ def test_a_soft_image_reports_the_defect_while_staying_usable(tmp_path):
     and the farmer told, AND the pipeline is still allowed to try."""
     import cv2
     p = tmp_path / "soft.jpg"
-    cv2.imwrite(str(p), cv2.GaussianBlur(textured(), (0, 0), 6))
+    cv2.imwrite(str(p), cv2.GaussianBlur(textured(), (0, 0), 1.0))
     q = validate_image(str(p))
-    assert "blur_too_high" in q["reasons"]
+    # Either softness label counts as recording the defect; which one it is
+    # is the subject of test_the_quality_report_distinguishes_soft_from_empty.
+    assert {"blur_too_high", "no_fine_detail"} & set(q["reasons"]), q["reasons"]
     assert q["passed"] is False, "the defect must be recorded"
     assert q["fatal"] is False, "but it must not stop the pipeline"
+
+    # and the same holds for an image far past recovery
+    hard = tmp_path / "hard.jpg"
+    cv2.imwrite(str(hard), cv2.GaussianBlur(textured(), (0, 0), 6))
+    qh = validate_image(str(hard))
+    assert qh["passed"] is False and qh["fatal"] is False
 
 
 def test_a_missing_file_is_fatal_and_says_so(tmp_path):
     q = validate_image(str(tmp_path / "nothing.jpg"))
     assert q["fatal"] is True
     assert q["reasons"] == ["file_not_found"]
+
+
+def test_the_quality_report_distinguishes_soft_from_empty(tmp_path):
+    """Same Laplacian score, opposite advice.
+
+    A soft photograph is worth keeping and usually still measures. One with no
+    fine detail left was taken too far away or is a thumbnail, and the only fix
+    is to retake it - so the two must not arrive under the same label.
+    """
+    import cv2
+    soft = tmp_path / "soft.jpg"
+    cv2.imwrite(str(soft), cv2.GaussianBlur(textured(), (0, 0), 1.0))
+    empty = tmp_path / "empty.jpg"
+    cv2.imwrite(str(empty), upscaled_thumbnail())
+
+    qs = validate_image(str(soft))
+    qe = validate_image(str(empty))
+    assert qs["metrics"]["sharpness_verdict"] == "recoverable"
+    assert qe["metrics"]["sharpness_verdict"] == "no_detail"
+    assert "no_fine_detail" in qe["reasons"]
+    assert "no_fine_detail" not in qs["reasons"]
+    # and neither stops the pipeline
+    assert qs["fatal"] is False and qe["fatal"] is False
