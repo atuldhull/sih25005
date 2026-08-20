@@ -41,9 +41,33 @@ def _load_image(image_path: str):
     return image, None
 
 
+# Blur is measured at a FIXED working size. Laplacian variance counts
+# per-pixel high-frequency content, so the same photograph scores wildly
+# differently depending only on its resolution - measured on one real image:
+#
+#     5184x3456 (original)   62.9   <- would FAIL a threshold of 100
+#     2000x1333             271.6
+#     1200x800              490.0
+#      640x426              755.4   <- passes easily
+#
+# A 12x swing on identical pixels. With a fixed threshold that rejects sharp
+# photographs from a modern phone while accepting compressed thumbnails -
+# exactly backwards, and it would refuse the very images this system is built
+# for. Normalising the long side first makes the number comparable across
+# devices, which is the only way a single threshold can mean anything.
+BLUR_WORK_LONG_SIDE = 1024
+
+
 def _blur_score(image) -> float:
-    """Return Laplacian variance; lower values indicate more blur."""
+    """Laplacian variance at a normalised size; lower means more blur."""
     cv2 = _get_cv2()
+    h, w = image.shape[:2]
+    longest = max(h, w)
+    if longest > BLUR_WORK_LONG_SIDE:
+        scale = BLUR_WORK_LONG_SIDE / float(longest)
+        image = cv2.resize(image, (max(1, int(w * scale)),
+                                   max(1, int(h * scale))),
+                           interpolation=cv2.INTER_AREA)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 

@@ -6,16 +6,17 @@ published as Kaggle datasets and fetched with scripts/fetch_models.py, which
 also verifies a SHA256 so a truncated download cannot be mistaken for a model
 bug.
 """
+from ml.config.detection import _at_root
 
 # ---- Section 5.2 : bovine keypoints -------------------------------------
-POSE_MODEL_PATH = "models/pose/bovine41_hrnet.pt"
+POSE_MODEL_PATH = _at_root("models/pose/bovine41_hrnet.pt")
 # Below this, a joint is treated as unavailable rather than uncertain. The
 # measurement layer already refuses traits whose landmarks are missing, so a
 # low bar here would produce confident measurements from guessed points.
 POSE_MIN_KEYPOINT_CONFIDENCE = 0.30
 
 # ---- Section 5.3 : breed / group verification ---------------------------
-BREED_MODEL_PATH = "models/breed/breed_verifier.pt"
+BREED_MODEL_PATH = _at_root("models/breed/breed_verifier.pt")
 # The verifier carries its own measured thresholds inside the checkpoint, so
 # nothing is hardcoded here. What IS a policy decision is whether we consult
 # the exact-breed head at all: measured at 38.1% source-held-out with

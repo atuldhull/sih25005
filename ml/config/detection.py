@@ -1,3 +1,5 @@
+from pathlib import Path as _Path
+
 """Detection module configuration: model paths, thresholds, and raw-label mapping."""
 
 RAW_LABEL_TO_CLASS_NAME = {
@@ -16,7 +18,21 @@ CANONICAL_CLASS_NAMES = ("animal", "ear_tag")
 # + preprocessor_config.json - the standard HF export format. When exporting the
 # Kaggle-trained checkpoint, use model.save_pretrained(RTDETR_MODEL_PATH) and
 # image_processor.save_pretrained(RTDETR_MODEL_PATH) into this same directory.
-RTDETR_MODEL_PATH = "models/rtdetr/animal_tag_rtdetr"
+# Anchored to the REPO ROOT, not the working directory.
+#
+# These used to be plain relative strings, and stage_ready.bat starts the
+# server with `cd /d "%~dp0"` - the server/ folder - so "models/rtdetr/..."
+# resolved to server/models/rtdetr/... which does not exist. Detection would
+# have reported "weights not found" on the demo machine while the weights sat
+# correctly in the repo root all along.
+_REPO_ROOT = _Path(__file__).resolve().parents[2]
+
+
+def _at_root(rel: str) -> str:
+    return str(_REPO_ROOT / rel)
+
+
+RTDETR_MODEL_PATH = _at_root("models/rtdetr/animal_tag_rtdetr")
 
 RTDETR_CONFIDENCE_THRESHOLD = 0.5
 
@@ -37,7 +53,7 @@ RTDETR_CONFIDENCE_THRESHOLD = 0.5
 # Set to None to restore the previous final-layer behaviour.
 EAR_TAG_DECODER_LAYER = 1
 
-SAM2_MODEL_PATH = "models/sam2/sam2_hiera_tiny.pt"
+SAM2_MODEL_PATH = _at_root("models/sam2/sam2_hiera_tiny.pt")
 # SAM2 resolves its config through Hydra, whose search path includes
 # pkg://sam2 - so this is a config NAME relative to the installed sam2
 # package, NOT a path on disk. Passing a filesystem path fails with
