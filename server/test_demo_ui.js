@@ -247,5 +247,64 @@ const renderWeight = (() => {
   check(/not measured/i.test(t), "a missing weight_kg block degrades quietly");
 }
 
-console.log(failures === 0 ? "\nALL PASS - weight panel too" : `\n${failures} FAILED`);
+
+// ===== the baseline warning ==============================================
+// The baseline engine scores all twenty traits and produces a weight, none of
+// it measured from the photographs. Measured against a real dataset it answers
+// on about two thirds of images, because the ML pipeline scores at least one
+// CONTRACT trait on only about a third. Beside twenty confident-looking
+// numbers, a small "Baseline" label in the summary does not convey that.
+const renderScorecard = (() => {
+  const fs3 = require("fs"), vm3 = require("vm"), p3 = require("path");
+  const html = fs3.readFileSync(p3.join(__dirname, "static", "demo.html"), "utf8");
+  const body = html.split(/<script>/)[1].split(/<\/script>/)[0];
+  const ctx = { document: { createElement: (t) => new Node(t) }, console, Math,
+                CATS: [] };
+  const grab = (sig) => {
+    const start = body.indexOf(sig);
+    if (start < 0) throw new Error("not found: " + sig);
+    let i = body.indexOf("{", start), depth = 0;
+    for (; i < body.length; i++) {
+      if (body[i] === "{") depth++;
+      else if (body[i] === "}" && --depth === 0) break;
+    }
+    return body.slice(start, i + 1);
+  };
+  vm3.createContext(ctx);
+  vm3.runInContext(["function el(", "function pct(", "function renderWeight(",
+                    "function renderIdentity(", "function showOverlay(",
+                    "function renderScorecard("].map(grab).join("\n")
+    + "\nthis.renderScorecard = renderScorecard;", ctx);
+  return ctx.renderScorecard;
+})();
+
+function scorecardText(res) {
+  const target = new Node("div");
+  renderScorecard(target, res);
+  return target.text;
+}
+
+{
+  const t = scorecardText({ session_id: "s1", engine: "baseline", traits: [],
+                            weight_kg: { low: 412, high: 440 } });
+  check(/DEMONSTRATION DATA/i.test(t),
+    "a baseline result is labelled as demonstration data");
+  check(/NOT measured/i.test(t),
+    "and says outright the numbers were not measured from the photographs");
+  check(/placeholder/i.test(t), "and calls the figures placeholders");
+}
+{
+  const t = scorecardText({ session_id: "s2", engine: "ml-pipeline", traits: [],
+                            weight_kg: { low: null, high: null } });
+  check(!/DEMONSTRATION DATA/i.test(t),
+    "a real pipeline result carries no such warning");
+}
+{
+  const t = scorecardText({ session_id: "s3", traits: [] });
+  check(/DEMONSTRATION DATA/i.test(t),
+    "an absent engine field is treated as not-the-real-pipeline - the safe "
+    + "reading of unknown provenance is to warn");
+}
+
+console.log(failures === 0 ? "\nALL PASS - demo console" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

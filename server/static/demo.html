@@ -420,6 +420,19 @@
     });
     target.appendChild(sum);
 
+    // Measured: the real pipeline is adopted on about a third of photographs.
+    // On the rest the baseline engine answers instead, and it scores all
+    // twenty traits and produces a weight - none of it measured from the
+    // image. Beside twenty confident-looking numbers, a small "Baseline" label
+    // in the summary is not enough to convey that, so it is said outright.
+    if (!(res.engine && res.engine.startsWith("ml"))) {
+      target.appendChild(el("div", "risk high",
+        "DEMONSTRATION DATA - these scores were NOT measured from these " +
+        "photographs. The baseline engine produced them because the ML " +
+        "pipeline could not score this pair. Every trait score, the weight " +
+        "and the confidence figures below are placeholders."));
+    }
+
     target.appendChild(renderWeight(res));
     target.appendChild(renderIdentity(res));
 
