@@ -212,6 +212,26 @@ def to_contract_dict(
             else None
         )
 
+        # The interval, when the measurement carries one. Angle and ratio
+        # traits now compute an uncertainty from their own geometry - an angle
+        # taken across a segment a few percent of the animal long inherits a
+        # much wider one than the same angle across its whole body - so there
+        # is a real interval to report rather than a fabricated one.
+        #
+        # Still null where nothing computes it, which is what the field meant
+        # before: null is "we do not know", never "the measurement is exact".
+        ci_str = None
+        if (measurement.value is not None
+                and getattr(measurement, "uncertainty", None) is not None):
+            u = abs(measurement.uncertainty)
+            lo, hi = measurement.value - u, measurement.value + u
+            # "135.0-141.0 cm" reads fine; "-3.0-4.8 degrees" does not - the
+            # hyphen becomes ambiguous the moment a bound is negative, and
+            # signed traits (a cow-hock deviation, an udder above the hock)
+            # produce those routinely.
+            sep = " to " if lo < 0 else "-"
+            ci_str = f"{lo:.1f}{sep}{hi:.1f} {measurement.unit}"
+
         traits_out.append(
             {
                 "name": trait_def["name"],
@@ -219,10 +239,7 @@ def to_contract_dict(
                 "score": score.score_1_9,
                 "confidence": round(score.confidence, 2),
                 "measured_value": measured_value_str,
-                # ci (confidence interval) is not currently computed anywhere in the
-                # pipeline - leave null until a real CI estimate exists. Do NOT
-                # fabricate a range; null is the honest value here.
-                "ci": None,
+                "ci": ci_str,
                 "measure_class": trait_def["trait_class"],
                 "view": trait_def["view"],
                 "overlay_points": [[int(round(p[0])), int(round(p[1]))] for p in overlay["points"]],

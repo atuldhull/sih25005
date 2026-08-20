@@ -202,7 +202,7 @@ Each of these produced no error, which is why they lasted:
 
 ## Tests
 
-    395   ml/tests
+    400   ml/tests
      11   server suites (test_app_contract, test_session, test_demo,
           test_concurrency, test_vkg, test_rag, test_chat, test_providers,
           test_voice, test_reports_not_screened)
