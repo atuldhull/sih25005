@@ -16,6 +16,7 @@ exclusively via HuggingFace `transformers` (Apache-2.0), which is license-safe.
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -24,6 +25,7 @@ from ml.config.detection import (
     CANONICAL_CLASS_NAMES,
     DEFAULT_DEVICE,
     DEBUG_DIR,
+    EAR_TAG_DECODER_LAYER,
     RAW_LABEL_TO_CLASS_NAME,
     RTDETR_CONFIDENCE_THRESHOLD,
     RTDETR_MODEL_PATH,
@@ -43,31 +45,6 @@ class DetectionLabelError(ValueError):
 _rt_detr_model: Any = None
 _rt_detr_processor: Any = None
 _sam2_predictor: Any = None
-
-
-def _get_cv2():
-    """Lazily import cv2, translating a missing installation into
-    DetectionBackendError so it degrades through the same graceful path as
-    the other backends (transformers, sam2) instead of failing at module
-    import time. cv2 was previously imported at module scope, which meant a
-    missing installation raised ModuleNotFoundError when `import ml.pipeline`
-    ran, before any try/except in the pipeline could handle it - the package
-    could not even be imported on a machine without cv2 installed.
-
-    numpy/PIL are intentionally NOT made lazy here: they aren't the
-    dependency the original finding was about, numpy appears in this
-    module's type annotations (np.ndarray) which would need broader
-    signature changes to make lazy, and neither is as heavy/environment-
-    fragile as cv2 (system libs) or torch/transformers (already lazy below).
-    """
-    try:
-        import cv2
-        return cv2
-    except ImportError as exc:
-        raise DetectionBackendError(
-            "'opencv-python' (cv2) is not installed. Install it with "
-            "`pip install opencv-python` to use the detection backend."
-        ) from exc
 
 
 def validate_label_map() -> None:
@@ -161,17 +138,36 @@ def load_rt_detr(device: str = DEFAULT_DEVICE) -> Tuple[Any, Any]:
     return _rt_detr_model, _rt_detr_processor
 
 
+class _DecoderLayerView:
+    """Minimal stand-in for a model output that exposes ONE decoder layer.
+
+    `post_process_object_detection` reads only `.logits` and `.pred_boxes`,
+    so presenting an intermediate layer through those two attributes lets us
+    reuse HuggingFace's own post-processing - including the rescale to
+    target_sizes - instead of duplicating that coordinate arithmetic here.
+    """
+
+    def __init__(self, logits, pred_boxes):
+        self.logits = logits
+        self.pred_boxes = pred_boxes
+
+
 def _run_detector(
     image_bgr: np.ndarray,
     model_and_processor: Tuple[Any, Any],
     threshold: float = RTDETR_CONFIDENCE_THRESHOLD,
+    decoder_layer: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Run RT-DETRv2 over a BGR image (as loaded by cv2.imread) and return
     normalized detections: [{label: int, score: float, bbox: (x1,y1,x2,y2)}].
+
+    decoder_layer=None reads the FINAL layer (unchanged behaviour). An int
+    reads that intermediate decoder layer instead - ear_tag does, because the
+    final layer's tag head collapsed in this checkpoint. See
+    EAR_TAG_DECODER_LAYER in config/detection.py for the measured figures.
     """
     import torch
 
-    cv2 = _get_cv2()
     model, processor = model_and_processor
 
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
@@ -185,11 +181,36 @@ def _run_detector(
         with torch.no_grad():
             outputs = model(**inputs)
 
+        if decoder_layer is not None:
+            inter_logits = getattr(outputs, "intermediate_logits", None)
+            inter_boxes = getattr(outputs, "intermediate_reference_points",
+                                  None)
+            if inter_logits is None or inter_boxes is None:
+                raise DetectionBackendError(
+                    "This transformers version does not expose "
+                    "intermediate_logits / intermediate_reference_points, so "
+                    f"decoder_layer={decoder_layer} cannot be read. Set "
+                    "EAR_TAG_DECODER_LAYER = None to fall back to the final "
+                    "layer (which under-detects ear tags in this checkpoint)."
+                )
+            n_layers = int(inter_logits.shape[1])
+            if not -n_layers <= decoder_layer < n_layers:
+                raise DetectionBackendError(
+                    f"EAR_TAG_DECODER_LAYER={decoder_layer} is out of range: "
+                    f"this model has {n_layers} decoder layers."
+                )
+            outputs = _DecoderLayerView(
+                inter_logits[:, decoder_layer],
+                inter_boxes[:, decoder_layer],
+            )
+
         # target_sizes expects (height, width) per image.
         target_sizes = torch.tensor([pil_image.size[::-1]])
         results = processor.post_process_object_detection(
             outputs, target_sizes=target_sizes, threshold=threshold
         )[0]
+    except DetectionBackendError:
+        raise
     except Exception as exc:
         raise DetectionBackendError(f"RT-DETRv2 inference failed: {exc}") from exc
 
@@ -216,7 +237,6 @@ def _pad_bbox(box) -> Tuple[float, float, float, float]:
 def detect_animal(image_path: str, device: str = DEFAULT_DEVICE) -> Optional[DetectionResult]:
     """Detect the best-animal box in an image, or return None if none is found."""
     validate_label_map()
-    cv2 = _get_cv2()
     image = cv2.imread(image_path)
     if image is None:
         return None
@@ -240,34 +260,54 @@ def detect_ear_tag(
 ) -> Optional[DetectionResult]:
     """Detect an ear tag within the animal box, or return None if none is found.
 
-    Searching within the animal bbox constrains the tag model to the relevant
-    image region (tags are small relative to the full frame).
+    Reads ear_tag from EAR_TAG_DECODER_LAYER on the FULL frame, then keeps
+    only tags lying inside animal_bbox. The previous implementation cropped to
+    the animal box and re-ran the detector; that is gone for two reasons:
+
+      1. it is unnecessary - from layer 1, ear_tag scores AP@0.5 = 0.954 on
+         the held-out test split reading the whole frame, so the crop bought
+         nothing;
+      2. it was actively harmful - the model was trained on full 640x640
+         frames, so an upscaled crop of a small region is out of distribution.
+
+    One forward pass instead of two, and the tag is still constrained to the
+    animal, so the signature, return type and meaning are unchanged.
     """
     validate_label_map()
-    cv2 = _get_cv2()
     image = cv2.imread(image_path)
     if image is None or animal_bbox is None:
         return None
 
-    x1, y1, x2, y2 = [int(round(v)) for v in animal_bbox]
-    x1, x2 = max(0, x1), min(image.shape[1], x2)
-    y1, y2 = max(0, y1), min(image.shape[0], y2)
-    if x2 - x1 <= 0 or y2 - y1 <= 0:
-        return None
-    crop = image[y1:y2, x1:x2]
-
     model_and_processor = load_rt_detr(device)
-    detections = _run_detector(crop, model_and_processor)
-    candidates = [
-        d for d in detections
-        if map_class_name(d["label"]) == "ear_tag" and d["score"] >= RTDETR_CONFIDENCE_THRESHOLD
-    ]
+    detections = _run_detector(
+        image, model_and_processor, decoder_layer=EAR_TAG_DECODER_LAYER
+    )
+
+    ax1, ay1, ax2, ay2 = [float(v) for v in animal_bbox]
+    candidates: List[Dict[str, Any]] = []
+    for det in detections:
+        if map_class_name(det["label"]) != "ear_tag":
+            continue
+        if det["score"] < RTDETR_CONFIDENCE_THRESHOLD:
+            continue
+        bx1, by1, bx2, by2 = det["bbox"]
+        # Containment replaces the crop: most of the tag must lie inside the
+        # animal box. This also rejects a tag on a NEIGHBOURING animal, which
+        # the old crop could pick up along its edges.
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+        tag_area = max(1e-9, (bx2 - bx1) * (by2 - by1))
+        if inter / tag_area >= 0.5:
+            candidates.append(det)
+
     if not candidates:
         return None
     best = max(candidates, key=lambda d: d["score"])
-    bx1, by1, bx2, by2 = best["bbox"]
+    # bbox is already in FULL-IMAGE coordinates - do not add a crop offset,
+    # unlike the previous crop-based implementation.
     return DetectionResult(
-        bbox=(bx1 + x1, by1 + y1, bx2 + x1, by2 + y1),
+        bbox=best["bbox"],
         confidence=best["score"],
         class_name="ear_tag",
     )
@@ -327,7 +367,6 @@ def segment_animal(
     box as a rectangle and segmentation_degraded is True. A debug masked-blur
     image is written under debug_dir.
     """
-    cv2 = _get_cv2()
     image = cv2.imread(image_path)
     if image is None:
         raise DetectionBackendError(f"Cannot read image for segmentation: {image_path}")
@@ -362,7 +401,6 @@ def _write_debug_images(
     debug_dir: str,
 ) -> str:
     """Blur everything outside the mask and save it, plus the raw mask, for debugging."""
-    cv2 = _get_cv2()
     os.makedirs(debug_dir, exist_ok=True)
     stem = os.path.splitext(os.path.basename(image_path))[0]
 
