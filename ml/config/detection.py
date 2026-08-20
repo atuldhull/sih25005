@@ -19,6 +19,24 @@ CANONICAL_CLASS_NAMES = ("animal", "ear_tag")
 RTDETR_MODEL_PATH = "models/rtdetr/animal_tag_rtdetr"
 
 RTDETR_CONFIDENCE_THRESHOLD = 0.5
+
+# Decoder layer to read ear_tag predictions from.
+#
+# RT-DETR trains every decoder layer with the same auxiliary losses, so each
+# layer carries a fully supervised classification + box head. In this
+# checkpoint the FINAL layer's ear_tag head collapsed while layer 1 stayed
+# healthy. Measured on the held-out TEST split (528 images, 399 tag boxes)
+# at threshold 0.5:
+#     layer 1 (this setting) : AP@0.5 0.954, precision 95.7%, recall 94.5%,
+#                              0.032 false positives per image
+#     final layer (previous) : AP@0.5 0.001 - effectively no detections
+# All layers localise tags identically (~0.91 IoU); only the final layer's
+# CONFIDENCE died, so this reads the model's own trained output from a head
+# that works. Note those are AP@0.5 figures, not COCO mAP@[0.50:0.95].
+#
+# Set to None to restore the previous final-layer behaviour.
+EAR_TAG_DECODER_LAYER = 1
+
 SAM2_MODEL_PATH = "models/sam2/sam2_hiera_tiny.pt"
 SAM2_CONFIG_PATH = "models/sam2/sam2_hiera_tiny.yaml"
 DEFAULT_DEVICE = "auto"
