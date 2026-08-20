@@ -204,6 +204,11 @@ def score_animal(
     scale_confidence = 0.0
     closeup_scale = None
     closeup_err = 0.056
+    # The error fraction of whichever scale is finally used. Every centimetre
+    # trait's interval is proportional to it, so reporting the default when a
+    # looser scale was actually used would understate all of them.
+    from ml.measurement.traits import DEFAULT_SCALE_ERROR_FRAC
+    scale_err = DEFAULT_SCALE_ERROR_FRAC
     if tag_bbox is not None:
         try:
             from ml.detection.detector import _get_cv2
@@ -213,6 +218,9 @@ def score_animal(
             if image_bgr is not None:
                 tag_result = read_tag(image_bgr, tag_bbox)
                 scale_factor, scale_confidence = scale_factor_from(tag_result)
+                if scale_factor is not None:
+                    scale_err = float((tag_result.get("scale") or {}).get(
+                        "error_frac", DEFAULT_SCALE_ERROR_FRAC))
 
                 if tag_from_closeup and scale_factor is not None:
                     # A SCALE BELONGS TO THE PHOTOGRAPH IT WAS MEASURED IN.
@@ -397,6 +405,10 @@ def score_animal(
                 # carries the ear's parallax on top of that
                 scale_confidence = max(0.0,
                                        min(1.0, 1.0 - moved.error_frac * 4.0))
+                # a transferred scale is looser than the close-up it came
+                # from: it carries the close-up's error, the edge of a small
+                # panel in the side photo, and the ear's parallax
+                scale_err = float(moved.error_frac)
                 if tag_result is not None:
                     tag_result["scale_note"] = moved.note
                     tag_result["scale_method"] = moved.method
@@ -413,6 +425,7 @@ def score_animal(
         scale_factor,
         species,
         scale_confidence,
+        scale_err,
     )
     scores = score_all_traits(measurements, species)
     eligibility = scoreability(measurements, species, quality_passed=quality_passed)
