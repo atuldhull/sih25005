@@ -5,6 +5,19 @@ configured model is actually available.
 
 Run:  venv\\Scripts\\python test_chat.py
 """
+
+import sys
+
+# This suite asserts on Hindi replies, and Windows' console default of cp1252
+# cannot encode Devanagari - printing a passing result raised UnicodeEncodeError
+# and the run looked like a test failure. Force UTF-8 on our own streams rather
+# than requiring every caller to set PYTHONIOENCODING.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError):
+        pass
+
 import httpx
 
 import chat

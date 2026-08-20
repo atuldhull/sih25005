@@ -261,6 +261,94 @@
   }));
 
   /* ---------- scorecard rendering ---------- */
+  // ---- Breed identity -----------------------------------------------
+  // The exact-breed head was measured at 38.1% on a source-held-out split and
+  // disables itself, so there is no breed answer to show. What ships instead
+  // is the GROUP head - 80.2% against a 60.7% background-only control - and
+  // the species head. Until this panel existed none of that reached a screen,
+  // and the one breed field the app could see was a bare false.
+  //
+  // The rule this panel exists to enforce: breed_verified === false means NOT
+  // CHECKED, never CONTRADICTED. Rendering it as a mismatch would accuse a
+  // correctly registered animal on every single record.
+  function renderIdentity(res) {
+    const card = el("div", "card");
+    card.appendChild(el("h3", null, "Breed identity"));
+
+    const status = res.breed_verify_status || "unverified";
+    if (status === "unverified") {
+      card.appendChild(el("div", "muted",
+        "Registered as " + (res.breed_registered || "unknown") +
+        ". The exact-breed model is switched off - measured at 38.1% on " +
+        "photographs from a source it had never seen, which is not worth " +
+        "acting on. This is NOT a mismatch: the breed was never checked."));
+    } else if (status === "agree") {
+      card.appendChild(el("div", "muted",
+        "The photograph agrees with the registered breed, " +
+        (res.breed_registered || "unknown") + "."));
+    } else {
+      card.appendChild(el("div", "risk",
+        "The photograph does not match the registered breed (" +
+        (res.breed_registered || "unknown") + "). Worth a human check of " +
+        "the record - not an automatic correction."));
+    }
+
+    const rows = el("div", "cat");
+
+    if (res.predicted_species) {
+      const r = el("div", "trow");
+      r.appendChild(el("div", "tname", "Species"));
+      r.appendChild(el("div", "tmeas",
+        pct(res.species_confidence) + " confident" +
+        (res.species_consistent === false
+          ? " - disagrees with the record" : "")));
+      r.appendChild(el("div", "tscore", res.predicted_species));
+      rows.appendChild(r);
+    }
+
+    if (res.predicted_group) {
+      const agree = res.group_consistent;
+      const r = el("div", "trow");
+      r.appendChild(el("div", "tname", "Breed group"));
+      // group_reliable false means the model answered but its own measured
+      // recall for that group is poor (exotic_dairy is 43%), so it is shown
+      // as a hint and never as a finding.
+      let note = pct(res.group_confidence) + " confident";
+      if (res.group_reliable === false) {
+        note += " - below this group's own reliability bar, treat as a hint";
+      } else if (agree === true) {
+        note += " - consistent with " + (res.breed_registered || "the record");
+      } else if (agree === false) {
+        note += " - does NOT match " + (res.breed_registered || "the record") +
+                ", worth checking the record";
+      }
+      r.appendChild(el("div", "tmeas", note));
+      r.appendChild(el("div", "tscore" + (agree === false ? " na" : ""),
+        String(res.predicted_group).replace(/_/g, " ")));
+      rows.appendChild(r);
+    }
+
+    if (!res.predicted_species && !res.predicted_group) {
+      rows.appendChild(el("div", "muted",
+        "No identity signal was produced for this session."));
+    }
+    card.appendChild(rows);
+
+    // Image quality is reported rather than used to refuse: measured, the
+    // pose model still produces usable joints well below the old blur bar.
+    if (res.quality_passed === false) {
+      card.appendChild(el("div", "muted",
+        "Image quality was flagged (soft or badly exposed). The session was " +
+        "still scored - blur was measured against what it actually costs - " +
+        "but treat these measurements as lower confidence."));
+    }
+    return card;
+  }
+
+  function pct(v) {
+    return (typeof v === "number") ? Math.round(v * 100) + "%" : "unknown";
+  }
+
   function renderScorecard(target, res) {
     // bind the session id HERE: the new-session card and a history card
     // can be on screen at once, and each row must open ITS OWN overlay
@@ -282,6 +370,8 @@
       sum.appendChild(s);
     });
     target.appendChild(sum);
+
+    target.appendChild(renderIdentity(res));
 
     if (res.escalated) {
       const rc = el("div", "risk high",
