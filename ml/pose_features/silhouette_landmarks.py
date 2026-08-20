@@ -220,6 +220,69 @@ def derive_chest_bottom(
     return float(x), float(y), conf
 
 
+# The brisket, from the silhouette rather than from the model.
+#
+# This is the one derivation that OVERRIDES a landmark the pose model already
+# produced, so the evidence for it has to be strong, and it is. Audited over 30
+# photographs against where a cow's anatomy has to be (see
+# ml/eval_landmark_placement.py), chest_front lands in the right region on 0 of
+# 18 images it was confident on - median position 0.60 of the way from head to
+# tail, when the brisket is at most 0.30. It is being predicted behind the
+# middle of the animal. The silhouette's barrel front lands at 0.26.
+#
+# What that costs while it stands: chest_front to pin_left spans 26% of the
+# animal where it should span about 70%, so body_length_to_height_ratio reads
+# 0.55 against a 0.9-1.4 band, and with a scale supplied body_length comes out
+# at 73 cm on an animal whose barrel alone is 150 cm.
+#
+# The barrel front is not the brisket exactly - it is where the body first
+# reaches most of its full depth, which is a little behind the point of the
+# chest - so the derived point carries the same capped confidence as every
+# other derived landmark, and the trait layer can see it is derived.
+BARREL_DEPTH_FRAC = 0.75
+
+
+def derive_chest_front(mask: np.ndarray,
+                       kps: Dict[str, Tuple[float, float, float]],
+                       animal_bbox: Sequence[float]
+                       ) -> Optional[Tuple[float, float, float]]:
+    """Front of the barrel, on whichever side the animal faces.
+
+    Refuses rather than guessing when the silhouette gives no usable barrel or
+    when the facing direction cannot be established - a brisket placed at the
+    wrong END of the animal would be far worse than none.
+    """
+    sign = facing_sign(kps, animal_bbox)
+    if sign is None or mask is None:
+        return None
+    cut = belly_line_y(mask)
+    h, w = mask.shape[:2]
+    cut = h if cut is None else max(1, min(h, int(cut)))
+
+    depths = np.zeros(w, dtype=np.float64)
+    for x in range(w):
+        rows = np.flatnonzero(mask[:cut, x])
+        depths[x] = (rows[-1] - rows[0] + 1) if rows.size else 0.0
+    if depths.max() <= 0:
+        return None
+    idx = np.flatnonzero(depths >= BARREL_DEPTH_FRAC * depths.max())
+    if idx.size < 8:
+        return None
+    runs = np.split(idx, np.flatnonzero(np.diff(idx) != 1) + 1)
+    run = max(runs, key=len)
+    if run[-1] - run[0] <= 32:
+        return None
+
+    # sign is -1 when the animal faces LEFT, so the head end is the low x
+    x_front = float(run[0]) if sign < 0 else float(run[-1])
+    col = np.flatnonzero(mask[:cut, int(x_front)])
+    if not col.size:
+        return None
+    # the brisket is low on the chest, not on the topline
+    y = float(col[0]) + 0.72 * float(col[-1] - col[0])
+    return (x_front, y, DERIVED_CONFIDENCE_CAP)
+
+
 def add_derived_landmarks(
     kps: Dict[str, Tuple[float, float, float]],
     mask: Optional[np.ndarray],
@@ -242,6 +305,17 @@ def add_derived_landmarks(
         if cb is not None:
             out["chest_bottom"] = cb
             prov["chest_bottom"] = "derived_from_silhouette"
+
+    # chest_front is REPLACED, not merely filled - the only landmark here that
+    # overrides a prediction the model made. See derive_chest_front for the
+    # audit: 0 of 18 in the right place, median position 0.60 of the way to the
+    # tail when the brisket is at most 0.30. Deriving it is strictly better
+    # than keeping a landmark that is measurably always wrong, and it is
+    # marked derived so nothing downstream mistakes it for a detection.
+    cf = derive_chest_front(mask, out, animal_bbox)
+    if cf is not None:
+        out["chest_front"] = cf
+        prov["chest_front"] = "derived_from_silhouette"
     return out, prov
 
 

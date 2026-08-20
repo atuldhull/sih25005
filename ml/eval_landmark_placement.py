@@ -28,7 +28,8 @@ import numpy as np
 
 from ml.detection.detector import detect_animal, segment_animal
 from ml.pose_features.pose_extractor import extract_keypoints
-from ml.pose_features.silhouette_landmarks import facing_sign
+from ml.pose_features.silhouette_landmarks import (
+    add_derived_landmarks, facing_sign)
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
@@ -94,6 +95,11 @@ def run(folder: str, limit: int = 40):
             mask, degraded = segment_animal(str(f), a.bbox)
             if degraded:
                 continue
+            # Audit what the PIPELINE uses, not what the model alone returned -
+            # some landmarks are derived from the silhouette, and one
+            # (chest_front) is deliberately replaced. Skipping this step made
+            # the report describe a stage that nothing downstream sees.
+            kps, _prov = add_derived_landmarks(kps, mask, a.bbox)
             sign = facing_sign(kps, a.bbox)
         except Exception:
             continue

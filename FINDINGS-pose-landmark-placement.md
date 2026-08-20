@@ -107,7 +107,27 @@ training data.
    marked absent in training rather than skipped would pull predictions toward
    the mean position.
 
-The interim handling on this side: measurement now carries an uncertainty
+## What has been done on this side in the meantime
+
+`chest_front` is now derived from the silhouette instead of being taken from
+the model — the front of the barrel, on whichever side the animal faces. It is
+the only landmark here that OVERRIDES a prediction rather than filling a gap,
+and it is marked derived with a capped confidence so nothing downstream
+mistakes it for a detection. Re-running the same audit:
+
+| | before | after |
+|---|---|---|
+| chest_front in place | 0% (n=18) | **59%** (n=27) |
+| chest_front median x | 0.60 | **0.26** |
+| body_length_to_height_ratio median | 0.55 | **0.93** (band 0.9–1.4) |
+| shoulder_angle median | 25° | **44°** (band 45–65) |
+
+That is a workaround, not a fix. It only works where a silhouette is available,
+it puts the point at the front of the barrel rather than at the true point of
+the chest, and it does nothing for `back_mid`, the shoulders, the knees, the
+hooks or the pins — all of which are still measurably in the wrong place.
+
+The rest of the interim handling: measurement now carries an uncertainty
 derived from the geometry, scoring refuses when that uncertainty covers the
 trait's whole band, and a value that is precise but anatomically impossible is
 reported as landmarks-probably-wrong rather than as an unusual animal. So none
