@@ -90,6 +90,60 @@ def _frame_metrics(image) -> dict:
     }
 
 
+# Which defects are worth REFUSING over, and which are worth recording.
+#
+# Blur was fatal until it was measured against what it actually costs. Blurring
+# one photograph by a known amount and re-running detection and pose:
+#
+#   sigma  blur score   usable joints   keypoint drift
+#     0       371.3           8              -
+#     1        52.3           8           0.18%
+#     2        10.8           9           0.49%
+#     3         4.7           9           0.94%
+#     4.5       2.8           9           1.09%
+#     6         2.56          9           1.52%
+#     8         2.14          7           2.85%
+#    12         1.89          6           3.81%
+#    16         1.76          2           2.67%
+#    24         1.64          0            -
+#
+# Two things follow. First, the pose model degrades gently: out to sigma 6 the
+# drift stays inside its own measured median error of 1.56% of the box side, so
+# images scoring 2.5 still produce usable joints. A threshold of 100 was
+# rejecting them. This repo's own demo side.jpg scores 8.9 and yields 8 usable
+# joints and a measured trait - it was being refused at stage 1 before anything
+# ever looked at it.
+#
+# Second, and worse for a gate: the score SATURATES. From sigma 4.5 to sigma 24
+# it moves 2.8 -> 1.64 while the pipeline goes from fully usable to producing
+# no joints at all. Almost all of its range is spent on the difference between
+# sharp and slightly soft, and almost none on the difference between usable and
+# hopeless. No threshold placed on it can separate the cases that matter.
+#
+# So blur is recorded, not refused. The honest gate is the outcome one the
+# pipeline already has - usable_joint_count == 0 - which measures whether the
+# image worked instead of predicting it from a proxy that cannot tell.
+# quality_passed still goes False, which flows into the not-scored reasons and
+# the eligibility calculation, so a soft photograph is reported as a soft
+# photograph rather than silently accepted.
+FATAL_REASONS = frozenset({
+    "file_not_found",
+    "unreadable_image",
+    "resolution_too_low",     # below 640x480 there is genuinely too little
+    "bad_aspect_ratio",       # a panorama or a sliver is not a photo of an animal
+})
+
+
+def is_fatal(reasons: List[str]) -> bool:
+    """Do these defects mean the pipeline cannot proceed at all?
+
+    Anything not listed is advisory: it degrades confidence and is reported,
+    but the image still gets its chance. Refusing to try is only correct when
+    trying cannot possibly work.
+    """
+    return any(r in FATAL_REASONS for r in reasons)
+
+
 def _screen_metrics(metrics: dict) -> List[str]:
     """Return the list of failure reasons implied by a metrics dict."""
     reasons = []
@@ -115,11 +169,13 @@ def validate_image(image_path: str, image_type: str = "side") -> dict:
     """
     image, load_reason = _load_image(image_path)
     if image is None:
-        return {"passed": False, "reasons": [load_reason], "metrics": {}}
+        return {"passed": False, "reasons": [load_reason], "metrics": {},
+                "fatal": True}
 
     metrics = _frame_metrics(image)
     reasons = _screen_metrics(metrics)
-    return {"passed": not reasons, "reasons": reasons, "metrics": metrics}
+    return {"passed": not reasons, "reasons": reasons, "metrics": metrics,
+            "fatal": is_fatal(reasons)}
 
 
 def validate_video(video_path: str) -> dict:

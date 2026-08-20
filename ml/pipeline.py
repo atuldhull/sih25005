@@ -74,7 +74,12 @@ def score_animal(
     rear_q = validate_image(rear_img, "rear")
     video_q = validate_video(video_path) if video_path else None
 
-    if not side_q["passed"]:
+    # Only a defect that makes the work impossible stops it. A soft or badly
+    # exposed photograph is recorded (quality_passed goes False below, which
+    # reaches the eligibility calculation and the not-scored reasons) and then
+    # given its chance - blur is a poor predictor of whether pose will work,
+    # and the outcome gate further down measures that directly instead.
+    if side_q.get("fatal"):
         reason = "side_image_quality_failed: " + ", ".join(side_q["reasons"])
         return _build_not_scored(animal_id, species, reason, quality_passed=False, captured=captured)
 

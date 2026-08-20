@@ -121,10 +121,23 @@ CONTRACT_TRAITS = [
         "view": "side",
         # Contract defines Rear Legs Set as the SIDE-VIEW hock angle, not the
         # rear-view hip->hock cow-hock deviation (that geometry now belongs to
-        # rear_legs_rear_view below). Reuses the exact 3-point geometry already
-        # used internally by INTERNAL_EXTRA_TRAITS "hock_angle"
-        # (knee_left -> hock_left -> pastern_left).
-        "required_keypoints": ["knee_left", "hock_left", "pastern_left"],
+        # rear_legs_rear_view below). Shares its geometry with the internal
+        # "hock_angle" trait.
+        # The upper landmark is hip_bone, NOT knee. In cattle the knee (carpus)
+        # is a FORE-leg joint and the hock a REAR-leg one, so knee->hock->pastern
+        # spans two different legs and measures nothing anatomical. The rear
+        # leg's chain is hip_bone -> hock -> pastern, and the hock angle is the
+        # angle that chain makes at the hock.
+        #
+        # Over 74 photographs, angle at the hock:
+        #
+        #     knee -> hock -> pastern (was)   n=11   median  67.1    18% in band
+        #     hip_bone -> hock -> pastern     n=40   median 153.5    48% in band
+        #
+        # The median moves from far outside the 130-160 band to inside it, and
+        # the sample count nearly quadruples because knee_left is one of the
+        # joints that most often collapses onto its neighbours.
+        "required_keypoints": ["hip_bone_left", "hock_left", "pastern_left"],
         "required_scale": False,
         "unit": "degrees",
         "smal_fallback": True,
@@ -315,7 +328,21 @@ INTERNAL_EXTRA_TRAITS = [
         "trait_id": "hock_angle",
         "name": "Hock Angle",
         "trait_class": "A",
-        "required_keypoints": ["knee_left", "hock_left", "pastern_left"],
+        # The upper landmark is hip_bone, NOT knee. In cattle the knee (carpus)
+        # is a FORE-leg joint and the hock a REAR-leg one, so knee->hock->pastern
+        # spans two different legs and measures nothing anatomical. The rear
+        # leg's chain is hip_bone -> hock -> pastern, and the hock angle is the
+        # angle that chain makes at the hock.
+        #
+        # Over 74 photographs, angle at the hock:
+        #
+        #     knee -> hock -> pastern (was)   n=11   median  67.1    18% in band
+        #     hip_bone -> hock -> pastern     n=40   median 153.5    48% in band
+        #
+        # The median moves from far outside the 130-160 band to inside it, and
+        # the sample count nearly quadruples because knee_left is one of the
+        # joints that most often collapses onto its neighbours.
+        "required_keypoints": ["hip_bone_left", "hock_left", "pastern_left"],
         "required_scale": False,
         "unit": "degrees",
         "smal_fallback": True,
@@ -335,7 +362,19 @@ INTERNAL_EXTRA_TRAITS = [
         "trait_id": "shoulder_angle",
         "name": "Shoulder Angle",
         "trait_class": "A",
-        "required_keypoints": ["withers", "shoulder_left", "chest_front"],
+        # 2 points (not 3), for the same reason as foot_angle above. The rule
+        # band 45-65 is the classic scapula slope - the angle of the shoulder
+        # line from horizontal - not an interior angle at the shoulder joint.
+        # With withers/shoulder_left/chest_front it routed into the
+        # interior-vertex branch and measured a different quantity entirely.
+        # Over 14 photographs where all the landmarks were available:
+        #
+        #     3-pt interior angle   median 15.0 deg    1/14 in band
+        #     2-pt slope            median 63.3 deg    3/14 in band
+        #
+        # The median moving from far outside the band to inside it is what
+        # identifies which quantity the band was written for.
+        "required_keypoints": ["withers", "chest_front"],
         "required_scale": False,
         "unit": "degrees",
         "smal_fallback": True,

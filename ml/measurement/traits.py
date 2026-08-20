@@ -6,7 +6,11 @@ from typing import Dict, List, Optional, Tuple
 from ml.common.schemas import MeasurementResult
 from ml.config.traits import get_trait, TRAIT_REGISTRY
 
-KEYPOINT_CONFIDENCE_THRESHOLD = 0.3
+# Measurement re-gates independently of the pose stage, so the EFFECTIVE
+# threshold is the stricter of the two and lowering only one of them changes
+# nothing. Kept equal to POSE_MIN_KEYPOINT_CONFIDENCE deliberately; see the
+# measured sweep in ml/config/models.py for why it is 0.10.
+KEYPOINT_CONFIDENCE_THRESHOLD = 0.10
 
 Keypoint = Tuple[float, float]
 

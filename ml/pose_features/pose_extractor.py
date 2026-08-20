@@ -39,7 +39,47 @@ from ml.config.models import POSE_MIN_KEYPOINT_CONFIDENCE, POSE_MODEL_PATH
 # The geometry was right the whole time; the joints were wrong. Nothing
 # downstream could have detected that, because a collapsed pair looks
 # exactly like a confident measurement.
-COLLAPSE_MIN_SEPARATION_FRAC = 0.02   # of the animal box's longer side
+# Calibrated against the measured separations rather than guessed. On a sharp
+# 4623 px animal the pairwise distances between distinct joints fall into two
+# clearly separated populations:
+#
+#     pin_left    <-> knee_left        4.9 px   0.11%   collapsed
+#     chest_front <-> hook_left        9.1 px   0.20%   collapsed
+#     pin_right   <-> knee_right      12.3 px   0.27%   collapsed
+#     ----------------------------------------------------------
+#     back_mid    <-> hip_bone_left   34.8 px   0.75%   plausible anatomy
+#     back_mid    <-> hip_bone_right  75.9 px   1.64%   plausible anatomy
+#     pin_left    <-> knee_right     148.2 px   3.21%   clearly distinct
+#
+# The gap between 0.27% and 0.75% is where the threshold belongs. An earlier
+# value of 2% sat above BOTH populations and discarded nine of nineteen usable
+# joints, including the hip bones and the topline - over-pruning until almost
+# nothing could be measured, which fails just as badly as measuring garbage,
+# only more quietly.
+#
+# 0.5% is also well inside the model's own error: median 1.56% of the box side,
+# PCK@0.02 61.7%. Two joints closer together than a third of the typical error
+# are not distinguishable, which is exactly the claim being made here.
+COLLAPSE_MIN_SEPARATION_FRAC = 0.005   # of the animal box's longer side
+
+# When two joints do collapse, which one is wrong? Refusing both was the first
+# answer, on the grounds that picking the survivor would be a coin flip. It is
+# not a coin flip when one of them is far more confident than the other.
+#
+# Confidence here is sigmoid(heatmap peak) * PCK@0.02 / 0.75, so it carries
+# both how sharp THIS prediction was and how reliable the joint is
+# historically. A joint at 0.62 sitting on top of one at 0.11 is not a
+# symmetric situation: the weak one has almost certainly drifted onto the
+# strong one, and discarding the strong one as well destroys a good landmark
+# to punish a bad one.
+#
+# Measured: refusing both meant that loosening the confidence gate made things
+# WORSE, not better - usable joints rose 6.3 -> 14.3 per image while measured
+# traits FELL 41 -> 34, because every newly admitted weak joint took a good
+# one down with it. Keeping the clearly-stronger member removes that
+# perversity, and comparable pairs are still both refused, which is the case
+# the coin-flip argument was actually about.
+COLLAPSE_KEEP_RATIO = 1.5
 
 _model = None
 _load_error: Optional[str] = None
@@ -129,9 +169,9 @@ def _drop_collapsed(
 
     When two distinct landmarks share a pixel the model has not separated
     them, and any measurement spanning either is meaningless while still
-    looking confident. Both are refused rather than guessing which is real -
-    keeping the higher-confidence one would be a coin flip, and the whole
-    point is that we cannot tell.
+    looking confident. A clearly stronger member survives (see
+    COLLAPSE_KEEP_RATIO); a pair of comparable confidence is refused entirely,
+    because there is then genuinely no way to tell which one moved.
     """
     x1, y1, x2, y2 = (float(v) for v in animal_bbox)
     reach = COLLAPSE_MIN_SEPARATION_FRAC * max(1.0, max(x2 - x1, y2 - y1))
@@ -141,7 +181,16 @@ def _drop_collapsed(
         for nb, vb in live[i + 1:]:
             if _same_landmark_other_side(na, nb):
                 continue
-            if abs(va[0] - vb[0]) <= reach and abs(va[1] - vb[1]) <= reach:
+            if abs(va[0] - vb[0]) > reach or abs(va[1] - vb[1]) > reach:
+                continue
+            hi, lo = (va[2], vb[2]) if va[2] >= vb[2] else (vb[2], va[2])
+            if lo > 0 and hi >= COLLAPSE_KEEP_RATIO * lo:
+                # One is clearly better founded than the other; the weaker has
+                # drifted onto it. Keep the stronger.
+                bad.add(nb if va[2] >= vb[2] else na)
+            else:
+                # Comparably confident and in the same place. There is no
+                # basis for preferring either, so neither is trusted.
                 bad.add(na)
                 bad.add(nb)
     if not bad:
