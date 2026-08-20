@@ -643,6 +643,16 @@
       if (!alerts.length) { box.textContent = "No escalations yet."; return; }
       alerts.forEach(a => {
         const c = el("div", "alert-card");
+        // The baseline engine invents symptoms, and those reach this feed as
+        // real escalations about animals nothing examined. The alert is still
+        // shown - the escalation path is a feature that has to be
+        // demonstrable - but a vet officer must not act on a placeholder.
+        if (a.demonstration) {
+          c.appendChild(el("div", "risk high",
+            "DEMONSTRATION ALERT - the findings behind this were produced " +
+            "by the baseline engine, not measured from the photographs. " +
+            "Do not act on it."));
+        }
         const head = el("div");
         head.appendChild(el("b", null,
           (a.top_risks || []).join(", ") || "escalation"));

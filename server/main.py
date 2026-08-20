@@ -429,6 +429,18 @@ def create_session(
             "animal_id": animal_id,
             "village": animal["village"],
             "date": date.today().isoformat(),
+            # Which engine produced the findings behind this alert. The
+            # baseline engine INVENTS symptoms - skin_nodules at confidence
+            # 0.82, or gait_asymmetry - and those flow through the knowledge
+            # graph into needs_escalation and land here, in a veterinary
+            # officer's feed, about an animal nothing examined. Someone could
+            # drive to a farm over it.
+            #
+            # The alert is still raised, because the escalation path is a real
+            # feature that has to be demonstrable, but it is labelled so that
+            # nobody acts on a placeholder. Suppressing it instead would hide
+            # the feature; labelling it keeps the demo honest.
+            "demonstration": not str(result.get("engine", "")).startswith("ml"),
             "top_risks": [r.get("label") or r["condition"]
                           for r in risks[:3]],
             "herd_alerts": list(herd_alerts),

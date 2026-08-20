@@ -306,5 +306,41 @@ function scorecardText(res) {
     + "reading of unknown provenance is to warn");
 }
 
+
+// ===== the vet officer's alert feed ======================================
+// The baseline engine INVENTS symptoms - skin_nodules at confidence 0.82, or
+// gait_asymmetry - and those flow through the knowledge graph into
+// needs_escalation and land in this feed, about an animal nothing examined.
+// Someone could drive to a farm over it. The alert is still shown, because
+// the escalation path is a real feature that has to be demonstrable, but it
+// has to be unmistakable.
+//
+// This reads the source of loadAlerts rather than executing it, because that
+// function fetches. What matters is what it would draw.
+const alertsSource = (() => {
+  const fs4 = require("fs"), p4 = require("path");
+  const html = fs4.readFileSync(p4.join(__dirname, "static", "demo.html"), "utf8");
+  const body = html.split(/<script>/)[1].split(/<\/script>/)[0];
+  const start = body.indexOf("async function loadAlerts()");
+  if (start < 0) throw new Error("loadAlerts not found in demo.html");
+  return body.slice(start, body.indexOf("loadAnimals();", start));
+})();
+
+check(/a\.demonstration/.test(alertsSource),
+  "the alert feed checks which engine produced the findings");
+check(/DEMONSTRATION ALERT/.test(alertsSource),
+  "and says so on the card itself");
+check(/Do not act on it/i.test(alertsSource),
+  "and tells the officer not to act on it");
+{
+  const at = alertsSource.indexOf("a.demonstration");
+  check(/risk high/.test(alertsSource.slice(at, at + 400)),
+    "styled like a real finding, so it cannot be skimmed past");
+  const guarded = alertsSource.slice(at, alertsSource.indexOf("const head", at));
+  check(guarded.includes("DEMONSTRATION ALERT"),
+    "and the banner sits INSIDE the demonstration check - an unguarded one "
+    + "would brand every real escalation as fake");
+}
+
 console.log(failures === 0 ? "\nALL PASS - demo console" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);
