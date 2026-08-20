@@ -1,11 +1,29 @@
-﻿"""Scoring engine: maps trait measurements to 1-9 scores and eligibility/status gates."""
+"""Scoring engine: maps trait measurements to 1-9 scores and eligibility/status gates."""
 
-from typing import List
+from typing import List, Optional
 
 from ml.common.schemas import EligibilityResult, MeasurementResult, ScoreResult
 from ml.config.rules import score_from_value, SPECIES_RULES
 
 VALID_SPECIES = tuple(SPECIES_RULES)
+
+# How much of a trait's scoring band the uncertainty may cover before a score
+# stops meaning anything. At 1.0 the error bar spans the entire band; two
+# thirds already leaves most of the nine bins indistinguishable, and that is
+# where the line is drawn.
+UNCERTAINTY_BAND_FRACTION = 0.67
+
+
+def _band_width(trait_id: str, species: str) -> Optional[float]:
+    """Width of the calibrated range a 1-9 score is drawn from."""
+    band = SPECIES_RULES.get(species, {}).get(trait_id)
+    if not band:
+        return None
+    try:
+        return float(band["max"]) - float(band["min"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
 
 def score_trait(measurement: MeasurementResult, species: str) -> ScoreResult:
     """Score a single trait measurement into a 1-9 ScoreResult.
@@ -18,6 +36,22 @@ def score_trait(measurement: MeasurementResult, species: str) -> ScoreResult:
     """
     if measurement.value is None:
         return ScoreResult(trait_id=measurement.trait_id, score_1_9=None, confidence=0.0)
+
+    # A measurement whose uncertainty covers the whole range the score is drawn
+    # from is not a measurement. Two traits are built on segments a few percent
+    # of the animal long - foot_angle on pastern-to-hoof, shoulder_angle on
+    # withers-to-chest - and keypoint error there works out at +/-25 and +/-27
+    # degrees against bands 25 and 20 degrees wide. Every 1-9 bin falls inside
+    # the error bar, so which bin comes out is decided by noise.
+    #
+    # The rules module owns the bands, so this check belongs here rather than
+    # in measurement, which computes the uncertainty but cannot know what it
+    # is being compared against.
+    if measurement.uncertainty is not None:
+        band = _band_width(measurement.trait_id, species)
+        if band and measurement.uncertainty >= UNCERTAINTY_BAND_FRACTION * band:
+            return ScoreResult(trait_id=measurement.trait_id, score_1_9=None,
+                               confidence=0.0)
 
     score, rule_confidence = score_from_value(measurement.trait_id, species, measurement.value)
     if score is None:

@@ -53,6 +53,12 @@ class MeasurementResult:
     unit: str
     confidence: float
     flags: List[str] = field(default_factory=list)
+    # How much the value could be out by, in the trait's own unit, from the
+    # keypoint error alone. An angle built on a SHORT segment amplifies that
+    # error enormously: two joints 4% of the animal apart, each landing within
+    # 1.3% of the box side, put the angle between them out by +/-25 degrees.
+    # Optional so nothing that does not compute it is affected.
+    uncertainty: Optional[float] = None
 
 
 @dataclass
