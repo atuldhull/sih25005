@@ -23,6 +23,33 @@ is an estimate.
 So **10 of 20 are reachable** with a conformant tag close-up, and nine of the
 remaining ten are an annotation job, not a modelling one.
 
+### Before anyone annotates: four of those nine could not have worked
+
+`fore_udder_attachment`, `central_ligament`, `front_teat_placement` and
+`rear_teat_placement` were defined as class B — a RATIO of two distances — with
+only **two** required keypoints. `_compute_ratio` returns `None` below four, so
+those four traits could never have measured no matter how good the landmarks
+were. Nearly half the planned udder labelling would have produced nothing, and
+nobody would have noticed, because "not measurable" is exactly what a trait
+awaiting annotation looks like.
+
+Each now has a four-point definition whose denominator makes the value a
+fraction, which is what their calibrated band of 0..1 implies. **The exact ICAR
+convention has not been confirmed against the standard** — the bands may have
+been written for a different normalisation — so check those ranges before
+anyone scores an animal on them. What is no longer in doubt is that the
+definitions can produce a number.
+
+`angularity` is a different case again: it asks for the rib angle at three
+heights, and `KEYPOINT_SCHEMA` has no rib landmarks at all. That is not an
+annotation backlog, it is a gap nobody has specified — and adding it means
+changing both the schema and the trained checkpoint's keypoint list.
+
+`ml/tests/config/test_trait_definitions_are_computable.py` now fails on any
+trait whose keypoint count cannot produce its class, and lists the schema gap
+explicitly so it stays counted rather than hiding inside a refusal that looks
+like every other refusal.
+
 ## What the demo shows
 
 The adoption gate keeps the baseline engine unless the ML pipeline scores at

@@ -200,7 +200,22 @@ CONTRACT_TRAITS = [
         "trait_class": "B",
         "view": "side",
         # TODO: udder keypoints not yet in keypoint_schema.py.
-        "required_keypoints": ["fore_udder_top", "fore_udder_body_junction"],
+        # A class-B trait is a RATIO of two distances, so _compute_ratio needs
+        # four points: |p0-p1| / |p2-p3|. With two it returns None on every
+        # image, forever - this trait could never have measured, no matter how
+        # good the landmarks were. Four of the twenty were defined this way,
+        # and all four are udder traits waiting on annotation, so nearly half
+        # of that labelling effort would have produced nothing.
+        #
+        # The denominator below is chosen to make the ratio a FRACTION, which
+        # is what the calibrated band of 0..1 implies. The exact ICAR
+        # convention for this trait has not been confirmed against the
+        # standard - the band may have been written for a different
+        # normalisation - so treat the range as provisional and check it
+        # before anyone scores an animal on it. What is no longer provisional
+        # is that the definition can produce a number at all.
+        "required_keypoints": ["fore_udder_top", "fore_udder_body_junction",
+                               "chest_bottom", "back_mid"],
         "required_scale": False,
         "unit": "ratio",
         "smal_fallback": True,
@@ -226,7 +241,22 @@ CONTRACT_TRAITS = [
         "trait_class": "B",
         "view": "rear",
         # TODO: udder keypoints not yet in keypoint_schema.py.
-        "required_keypoints": ["udder_cleft_top", "udder_cleft_bottom"],
+        # A class-B trait is a RATIO of two distances, so _compute_ratio needs
+        # four points: |p0-p1| / |p2-p3|. With two it returns None on every
+        # image, forever - this trait could never have measured, no matter how
+        # good the landmarks were. Four of the twenty were defined this way,
+        # and all four are udder traits waiting on annotation, so nearly half
+        # of that labelling effort would have produced nothing.
+        #
+        # The denominator below is chosen to make the ratio a FRACTION, which
+        # is what the calibrated band of 0..1 implies. The exact ICAR
+        # convention for this trait has not been confirmed against the
+        # standard - the band may have been written for a different
+        # normalisation - so treat the range as provisional and check it
+        # before anyone scores an animal on it. What is no longer provisional
+        # is that the definition can produce a number at all.
+        "required_keypoints": ["udder_cleft_top", "udder_cleft_bottom",
+                               "rear_udder_top", "udder_floor"],
         "required_scale": False,
         "unit": "ratio",
         "smal_fallback": True,
@@ -251,7 +281,22 @@ CONTRACT_TRAITS = [
         "trait_class": "B",
         "view": "rear",
         # TODO: teat keypoints not yet in keypoint_schema.py.
-        "required_keypoints": ["teat_front_left", "teat_front_right"],
+        # A class-B trait is a RATIO of two distances, so _compute_ratio needs
+        # four points: |p0-p1| / |p2-p3|. With two it returns None on every
+        # image, forever - this trait could never have measured, no matter how
+        # good the landmarks were. Four of the twenty were defined this way,
+        # and all four are udder traits waiting on annotation, so nearly half
+        # of that labelling effort would have produced nothing.
+        #
+        # The denominator below is chosen to make the ratio a FRACTION, which
+        # is what the calibrated band of 0..1 implies. The exact ICAR
+        # convention for this trait has not been confirmed against the
+        # standard - the band may have been written for a different
+        # normalisation - so treat the range as provisional and check it
+        # before anyone scores an animal on it. What is no longer provisional
+        # is that the definition can produce a number at all.
+        "required_keypoints": ["teat_front_left", "teat_front_right",
+                               "rear_udder_left", "rear_udder_right"],
         "required_scale": False,
         "unit": "ratio",
         "smal_fallback": False,
@@ -279,7 +324,22 @@ CONTRACT_TRAITS = [
         "trait_class": "B",
         "view": "rear",
         # TODO: teat keypoints not yet in keypoint_schema.py.
-        "required_keypoints": ["teat_rear_left", "teat_rear_right"],
+        # A class-B trait is a RATIO of two distances, so _compute_ratio needs
+        # four points: |p0-p1| / |p2-p3|. With two it returns None on every
+        # image, forever - this trait could never have measured, no matter how
+        # good the landmarks were. Four of the twenty were defined this way,
+        # and all four are udder traits waiting on annotation, so nearly half
+        # of that labelling effort would have produced nothing.
+        #
+        # The denominator below is chosen to make the ratio a FRACTION, which
+        # is what the calibrated band of 0..1 implies. The exact ICAR
+        # convention for this trait has not been confirmed against the
+        # standard - the band may have been written for a different
+        # normalisation - so treat the range as provisional and check it
+        # before anyone scores an animal on it. What is no longer provisional
+        # is that the definition can produce a number at all.
+        "required_keypoints": ["teat_rear_left", "teat_rear_right",
+                               "rear_udder_left", "rear_udder_right"],
         "required_scale": False,
         "unit": "ratio",
         "smal_fallback": False,
