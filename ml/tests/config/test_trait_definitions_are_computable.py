@@ -58,7 +58,11 @@ KNOWN_SCHEMA_GAPS = {
 # against the side photograph's hock in a different coordinate frame. They are
 # not predicted by anything, so they do not belong in a schema whose 41 entries
 # mirror the trained checkpoint's keypoint list.
-VIEW_SCOPED_ALIASES = {"rear_hock_left", "rear_hock_right"}
+VIEW_SCOPED_ALIASES = {
+    "rear_hock_left", "rear_hock_right",
+    "rear_hip_bone_left", "rear_hip_bone_right",
+    "rear_hook_left", "rear_hook_right",
+}
 
 
 @pytest.mark.parametrize("trait", TRAIT_REGISTRY,

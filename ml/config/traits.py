@@ -114,7 +114,13 @@ CONTRACT_TRAITS = [
         "category": "Rump",
         "trait_class": "C",
         "view": "rear",
-        "required_keypoints": ["hook_left", "hook_right"],
+        # REAR-frame landmarks. This trait compares the animal's LEFT side
+        # with its RIGHT, which a side photograph cannot show: measured over
+        # 40 images the two sides sit 1.7% (hip bones) to 4.8% (hocks) of the
+        # animal apart there, against a real rump 15-20% of body length wide.
+        # They are on top of each other, and the difference between them is
+        # perspective, not conformation.
+        "required_keypoints": ["rear_hook_left", "rear_hook_right"],
         "required_scale": True,
         "unit": "cm",
         "smal_fallback": True,
@@ -169,7 +175,14 @@ CONTRACT_TRAITS = [
         # required). The cow-hock deviation geometry is static per-frame
         # rear-image geometry, not motion tracking, so "rear" is correct.
         "view": "rear",
-        "required_keypoints": ["hip_bone_left", "hip_bone_right", "hock_left", "hock_right"],
+        # REAR-frame landmarks. This trait compares the animal's LEFT side
+        # with its RIGHT, which a side photograph cannot show: measured over
+        # 40 images the two sides sit 1.7% (hip bones) to 4.8% (hocks) of the
+        # animal apart there, against a real rump 15-20% of body length wide.
+        # They are on top of each other, and the difference between them is
+        # perspective, not conformation.
+        "required_keypoints": ["rear_hip_bone_left", "rear_hip_bone_right",
+                               "rear_hock_left", "rear_hock_right"],
         "required_scale": False,
         "unit": "degrees",
         "smal_fallback": False,

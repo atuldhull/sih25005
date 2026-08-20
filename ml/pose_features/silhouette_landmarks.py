@@ -365,9 +365,27 @@ UDDER_CENTRE_FRAC = 0.34
 # These names are deliberately absent from KEYPOINT_SCHEMA: the schema's 41
 # entries correspond to the trained checkpoint's own keypoint list, and these
 # are not predicted, they are copies made at merge time.
+# The left/right pairs matter for a second reason. A trait that compares the
+# LEFT side of the animal with the RIGHT - cow-hock deviation, rump width -
+# cannot be measured from a side photograph at all, because the two sides
+# overlap there. Measured across 40 photographs, the horizontal separation
+# between a left landmark and its right partner in a SIDE view:
+#
+#     hip_bone_left  <-> hip_bone_right     1.70% of the animal
+#     hock_left      <-> hock_right         4.82%
+#
+# against a real rump that is 15-20% of body length wide. Those points are on
+# top of each other. rear_legs_rear_view was computing a left-versus-right
+# deviation from them and producing a spread of -16 to +15 degrees, which
+# looked like conformation and was perspective noise. It is one of the few
+# contract traits that scores, and it was scoring on nothing.
 REAR_FRAME_ALIASES = {
     "hock_left": "rear_hock_left",
     "hock_right": "rear_hock_right",
+    "hip_bone_left": "rear_hip_bone_left",
+    "hip_bone_right": "rear_hip_bone_right",
+    "hook_left": "rear_hook_left",
+    "hook_right": "rear_hook_right",
 }
 
 

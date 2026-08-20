@@ -32,11 +32,14 @@ SIDE_VIEW_KP = {
     "pastern_left": _kp(130.0, 550.0),
 }
 
+# REAR-frame landmarks. This trait compares the animal's left side with its
+# right, and a side photograph shows the two sides 1.7% of the animal apart -
+# on top of each other - so it can only be measured from a rear view.
 REAR_VIEW_KP = {
-    "hip_bone_left": _kp(200.0, 100.0),
-    "hip_bone_right": _kp(260.0, 100.0),
-    "hock_left": _kp(210.0, 300.0),
-    "hock_right": _kp(250.0, 300.0),
+    "rear_hip_bone_left": _kp(200.0, 100.0),
+    "rear_hip_bone_right": _kp(260.0, 100.0),
+    "rear_hock_left": _kp(210.0, 300.0),
+    "rear_hock_right": _kp(250.0, 300.0),
 }
 
 
@@ -87,7 +90,10 @@ def test_rear_legs_set_and_rear_view_are_independent():
     rlrv = set(by_id["rear_legs_rear_view"]["required_keypoints"])
     assert rls != rlrv
     assert len(rls) == 3 and len(rlrv) == 4
-    assert rlrv == {"hip_bone_left", "hip_bone_right", "hock_left", "hock_right"}
+    assert rlrv == {"rear_hip_bone_left", "rear_hip_bone_right",
+                    "rear_hock_left", "rear_hock_right"}
+    assert all(j.startswith("rear_") for j in rlrv), (
+        "a left-versus-right comparison cannot come from a side photograph")
     # A single leg's chain: one side only, and no left/right pairing.
     assert not any(j.endswith("_right") for j in rls)
 

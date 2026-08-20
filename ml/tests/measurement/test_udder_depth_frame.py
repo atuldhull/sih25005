@@ -95,9 +95,17 @@ def test_the_side_view_hock_is_not_overwritten_by_the_rear_one():
     assert prov["rear_hock_left"] == "detected_in_rear_view"
 
 
-def test_both_hocks_are_aliased():
-    assert REAR_FRAME_ALIASES == {"hock_left": "rear_hock_left",
-                                  "hock_right": "rear_hock_right"}
+def test_every_left_right_pair_a_rear_trait_needs_is_aliased():
+    """Hocks for udder depth; hip bones and hooks for the traits that compare
+    the two sides of the animal, which a side photograph cannot show."""
+    assert REAR_FRAME_ALIASES == {
+        "hock_left": "rear_hock_left",
+        "hock_right": "rear_hock_right",
+        "hip_bone_left": "rear_hip_bone_left",
+        "hip_bone_right": "rear_hip_bone_right",
+        "hook_left": "rear_hook_left",
+        "hook_right": "rear_hook_right",
+    }
 
 
 def test_a_refused_rear_hock_is_not_merged():

@@ -14,10 +14,11 @@ is an estimate.
 
 | | count | blocked by |
 |---|---|---|
-| measurable now | 4 | — `rump_angle`, `rear_legs_set`, `rear_legs_rear_view`, `foot_angle` |
+| measurable now | 3 | — `rump_angle`, `rear_legs_set`, `foot_angle` |
 | need a centimetre scale | 5 | an NDDB-spec tag in the frame |
 | unlocked by the two-view cross-section | 1 | `heart_girth`, previously classed SMAL |
 | need landmarks nobody annotated | 9 | udder, teat and rib landmarks |
+| needs a rear-view landmark the model does not give | 1 | `rear_legs_rear_view` — `hip_bone` is confidence 0.0 in a rear view |
 | need a fat-cover model | 1 | `body_condition_score` |
 
 So **10 of 20 are reachable** with a conformant tag close-up, and nine of the
@@ -49,6 +50,33 @@ changing both the schema and the trained checkpoint's keypoint list.
 trait whose keypoint count cannot produce its class, and lists the schema gap
 explicitly so it stays counted rather than hiding inside a refusal that looks
 like every other refusal.
+
+### And one of the four "measurable now" traits was measuring nothing
+
+`rear_legs_rear_view` compares the animal's LEFT side with its RIGHT — cow-hock
+deviation. A side photograph cannot show that. Measured over 40 images, the
+horizontal separation between a left landmark and its right partner in a side
+view:
+
+    hip_bone_left <-> hip_bone_right     1.70% of the animal
+    hock_left     <-> hock_right         4.82%
+
+against a real rump 15–20% of body length wide. Those points are on top of each
+other, and the trait was computing a left-versus-right deviation between them,
+producing a spread of −16° to +15° that looked like conformation and was
+perspective noise. It is one of the few contract traits that scored, and it was
+scoring on nothing.
+
+It now requires rear-frame landmarks, and refuses without them. On the rear
+photograph the pose model gives 19 usable joints — but `hip_bone` comes back at
+confidence 0.0, because it was trained on side views. So the trait refuses. That
+is the correct outcome and a smaller claim than before: **3 traits are
+measurable from the photographs we can currently take**, not 4.
+
+`rump_width` had the same defect and the same fix. `udder_depth` had a related
+one — it paired a rear-frame landmark with a side-frame one and computed a
+distance across two coordinate frames, producing 74.7 cm against a band of
+−10 to 25.
 
 ## What the demo shows
 
@@ -127,7 +155,7 @@ Each of these produced no error, which is why they lasted:
 
 ## Tests
 
-    324   ml/tests
+    344   ml/tests
       9   server suites (test_app_contract, test_session, test_demo,
           test_concurrency, test_vkg, test_rag, test_chat, test_providers,
           test_voice)

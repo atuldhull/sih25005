@@ -1,4 +1,4 @@
-﻿"""Tests for the canonical keypoint schema and normalize_keypoints() seam."""
+"""Tests for the canonical keypoint schema and normalize_keypoints() seam."""
 
 import sys
 
@@ -118,6 +118,25 @@ class TestMeasurementInterop:
             "hoof_right": (630, 585, 0.95), "rear_udder": (610, 420, 0.95),
         }
         normalized = normalize_keypoints(full, "identity")
+
+        # Then the rear-view merge, which is what the pipeline does next and
+        # is where rear-frame landmarks come from. They are deliberately NOT
+        # canonical schema names - normalize_keypoints validates against the
+        # 41 the checkpoint predicts, and these are copies made at merge time,
+        # not predictions - so they are added here rather than above.
+        #
+        # Two of the twenty traits need them. rump_width and
+        # rear_legs_rear_view compare the animal's LEFT side with its RIGHT,
+        # and a side photograph shows the two sides 1.7% of the animal apart,
+        # on top of each other. They can only be measured from a rear view.
+        normalized.update({
+            "rear_hook_left": (540, 200, 0.95),
+            "rear_hook_right": (600, 200, 0.95),
+            "rear_hip_bone_left": (520, 180, 0.95),
+            "rear_hip_bone_right": (590, 180, 0.95),
+            "rear_hock_left": (480, 500, 0.95),
+            "rear_hock_right": (560, 500, 0.95),
+        })
         measurements = measure_all_traits(normalized, 0.05, "cattle", 0.9)
         assert sum(1 for m in measurements if m.value is not None) == 20
 
