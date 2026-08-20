@@ -144,8 +144,12 @@ def main():
         check(WARN, "skipped - no tag box")
     else:
         try:
-            from tag_ruler import (estimate_scale, ScaleResult,
-                                   scale_error_fraction)
+            try:
+                from ml.tag_intelligence.tag_ruler import (
+                    ScaleResult, estimate_scale, scale_error_fraction)
+            except ImportError:      # standalone drop-in use
+                from tag_ruler import (ScaleResult, estimate_scale,
+                                       scale_error_fraction)
             bgr = np.asarray(pil)[:, :, ::-1].copy()
             res = estimate_scale(bgr, tag)
             if isinstance(res, ScaleResult):
@@ -173,7 +177,11 @@ def main():
         check(WARN, "skipped", "need --pose and an animal box")
     else:
         try:
-            from bovine_pose_infer import BovinePoseModel
+            try:
+                from ml.pose_features.bovine_pose_infer import (
+                    BovinePoseModel)
+            except ImportError:      # standalone drop-in use
+                from bovine_pose_infer import BovinePoseModel
             pm = BovinePoseModel(args.pose)
             kps = pm.extract(pil, animal)
             trained = {k: v for k, v in kps.items() if v.confidence > 0}

@@ -23,6 +23,11 @@ from ml.pose_features.pose_extractor import (
     usable_joint_count,
 )
 from ml.tag_intelligence.tag_reader import read_tag, scale_factor_from
+from ml.vet_screening.vet_screener import (
+    screen,
+    screening_notes,
+    symptom_vector_or_empty,
+)
 from ml.scoring.scorer import scoreability, determine_status, score_all_traits
 from ml.weight.estimator import estimate_weight
 
@@ -152,9 +157,15 @@ def score_animal(
     breed_fields["species_consistent"] = (
         None if predicted_species is None else predicted_species == species)
 
-    # ---- TODO Stage 7: Vet Pre-Screen --------------------------------------
-    # NOT YET IMPLEMENTED. Passed as None so the result degrades gracefully.
-    symptom_vectors = None
+    # ---- Stage 7: Vet Pre-Screen -------------------------------------------
+    # Wired, but emits no symptoms - there is no trained detector, and a
+    # symptom here is not a display value: it feeds risk_report, which
+    # produces "refer to vet". What it DOES report is that a gait video was
+    # supplied and not analysed, because a silent empty screen would read as
+    # a clean bill of health.
+    screen_result = screen(keypoints=keypoints, video_path=video_path,
+                           species=species)
+    symptom_vectors = symptom_vector_or_empty(screen_result) or None
 
     if keypoints is None:
         reasons = []
@@ -163,6 +174,10 @@ def score_animal(
                 if q is not None and not q["passed"]:
                     reasons.append(f"{label}_quality_failed: " + ", ".join(q["reasons"]))
         reasons.append(pose_reason or "pose_estimation_unavailable")
+        # Carry the screening notes here too. This is the path where they
+        # matter most: nothing was scored AND the farmer's gait video went
+        # unused, and they should learn both at once rather than neither.
+        reasons.extend(screening_notes(screen_result))
         return _build_not_scored(animal_id, species, "; ".join(reasons),
                                  quality_passed, captured,
                                  breed_fields=breed_fields)
@@ -191,7 +206,8 @@ def score_animal(
         weight_result=weight_result,
         symptom_vectors=symptom_vectors,
         model_versions={},  # TODO: populate from each model when implemented
-        extra_warnings=explainability.get("text_summary", []),
+        extra_warnings=(explainability.get("text_summary", [])
+                        + screening_notes(screen_result)),
     )
     # THE ACTUAL FIX: return the contract-shaped dict, not the internal shape.
     # Breed fields stay None until Tag Intelligence (Stage 3) is implemented -
