@@ -71,6 +71,12 @@ class WeightResult:
     estimate_kg: Optional[float]
     range_kg: Tuple[Optional[float], Optional[float]]
     confidence: float
+    # How this number was arrived at, and what a second route said about it.
+    # Both optional so the older girth-length estimator is unaffected; the
+    # contract mapping previously hardcoded the method string, which meant a
+    # volume estimate would have been reported as a girth-length regression.
+    method: Optional[str] = None
+    cross_check: Optional[str] = None
 
 
 @dataclass

@@ -264,10 +264,8 @@ def _weight_to_contract(weight: Optional[WeightResult]) -> dict:
     return {
         "low": round(low, 1) if low is not None else None,
         "high": round(high, 1) if high is not None else None,
-        # NOTE: hardcoded until weight/estimator.py exposes which formula/method
-        # actually produced this estimate (girth-length-regression vs SMAL volume).
-        "method": "girth-length-regression",
-        "cross_check": None,
+        "method": weight.method or "girth-length-regression",
+        "cross_check": weight.cross_check,
     }
 
 

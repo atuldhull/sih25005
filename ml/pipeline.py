@@ -33,6 +33,7 @@ from ml.vet_screening.vet_screener import (
     symptom_vector_or_empty,
 )
 from ml.scoring.scorer import scoreability, determine_status, score_all_traits
+from ml.common.schemas import WeightResult
 from ml.weight.estimator import estimate_weight
 
 KEYPOINT_CONFIDENCE_MIN = 0.3
@@ -167,6 +168,17 @@ def score_animal(
     keypoints = None
     pose_reason = None
     derived_joints = {}
+    # Kept beyond the pose block: the two silhouettes are what the 2D -> 3D
+    # weight estimator reconstructs a torso volume from, and re-segmenting for
+    # it would run SAM2 a second time on the same photographs.
+    side_mask = None
+    rear_mask = None
+    belly_y = None
+    # Segmentation failing is not a crash - it falls back to the detection box
+    # as a rectangle - so it stayed invisible for a long time while silently
+    # disabling chest_bottom, the udder floor and the volume weight estimate.
+    # Recorded so the result says so instead of just quietly measuring less.
+    seg_note = None
     try:
         keypoints = extract_keypoints(side_img, animal_bbox)
         if usable_joint_count(keypoints) == 0:
@@ -183,7 +195,15 @@ def score_animal(
             try:
                 from ml.detection.detector import segment_animal
                 mask, degraded = segment_animal(side_img, animal_bbox)
+                if degraded:
+                    seg_note = ("segmentation_degraded: no silhouette, so "
+                                "brisket-derived traits and the volume weight "
+                                "estimate are unavailable")
                 if not degraded:
+                    side_mask = mask
+                    from ml.pose_features.silhouette_landmarks import (
+                        belly_line_y)
+                    belly_y = belly_line_y(mask)
                     keypoints, derived_joints = add_derived_landmarks(
                         keypoints, mask, animal_bbox)
             except Exception:
@@ -203,7 +223,6 @@ def score_animal(
                 rear_det = detect_animal(rear_img)
                 if rear_det is not None:
                     rear_kps = extract_keypoints(rear_img, rear_det.bbox)
-                    rear_mask = None
                     try:
                         from ml.detection.detector import segment_animal
                         rm, rdeg = segment_animal(rear_img, rear_det.bbox)
@@ -275,7 +294,37 @@ def score_animal(
     eligibility = scoreability(measurements, species, quality_passed=quality_passed)
     status = determine_status(eligibility, measurements)
     explainability = assemble_explainability(measurements, scores, keypoints)
+    # ---- Weight: 2D -> 3D torso volume, falling back to girth-length ------
+    # Two orthogonal silhouettes are two projections of one solid, so stacking
+    # elliptical cross-sections along the body recovers a volume. The rear
+    # photograph contributes only a width-to-depth RATIO, which is
+    # dimensionless and therefore survives having been taken from a different
+    # distance than the side photograph that carries the tag scale.
+    #
+    # The older girth-length route stays as the fallback, and is recomputed
+    # inside the volume estimator as an independent cross-check - two methods
+    # agreeing is evidence, one alone is a guess.
     weight_result = estimate_weight(measurements)
+    if keypoints and side_mask is not None:
+        try:
+            from ml.weight.volume_3d import estimate as estimate_volume
+            vol = estimate_volume(
+                side_mask, rear_mask, keypoints,
+                cm_per_px=scale_factor, belly_y=belly_y)
+            if vol.measured:
+                weight_result = WeightResult(
+                    estimate_kg=0.5 * (vol.low_kg + vol.high_kg),
+                    range_kg=(vol.low_kg, vol.high_kg),
+                    # The interval is dominated by an assumed density range and
+                    # by the CUBE of the tag-scale error, neither calibrated
+                    # against weighed animals. Held well below the measured
+                    # stages so nothing downstream treats it as solid.
+                    confidence=0.45,
+                    method=vol.method,
+                    cross_check=vol.cross_check,
+                )
+        except Exception:
+            pass          # the volume route is additive, never a blocker
 
     result = build_scoring_result(
         animal_id=animal_id,
@@ -289,7 +338,8 @@ def score_animal(
         symptom_vectors=symptom_vectors,
         model_versions={},  # TODO: populate from each model when implemented
         extra_warnings=(explainability.get("text_summary", [])
-                        + screening_notes(screen_result)),
+                        + screening_notes(screen_result)
+                        + ([seg_note] if seg_note else [])),
     )
     # THE ACTUAL FIX: return the contract-shaped dict, not the internal shape.
     # Breed fields stay None until Tag Intelligence (Stage 3) is implemented -

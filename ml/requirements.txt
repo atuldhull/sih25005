@@ -32,6 +32,26 @@ opencv-python
 numpy
 Pillow
 
+# SAM2, for the animal silhouette. Without it segment_animal() falls back to
+# the RT-DETR box as a plain rectangle and reports segmentation_degraded -
+# which is not a crash, so it was absent from this file and from the server's
+# environment for a long time without anyone noticing. What silently stopped
+# working: chest_bottom derivation (and with it body_depth, chest_depth and
+# chest_width_to_depth_ratio), the udder floor, and the whole 2D -> 3D weight
+# estimator, which cannot reconstruct a volume from a rectangle.
+#
+# Note the provenance. This is a third-party republish of Meta's code to PyPI,
+# not an official Meta package; the official install is
+#     pip install git+https://github.com/facebookresearch/sam2.git
+# Either works. --no-deps is used deliberately because its unpinned torch
+# requirement would otherwise pull a version other than the 2.13.0 above:
+#     pip install --no-deps sam2==1.1.0
+#     pip install hydra-core iopath tqdm
+sam2==1.1.0
+hydra-core
+iopath
+tqdm
+
 # --- deliberately NOT here -------------------------------------------------
 # rtmlib / mmpose / mmcv: the keypoint model is HRNet-W32 in plain torch, not
 #   RTMPose. mmcv does not install on Python 3.12+ (pkgutil.ImpImporter was
