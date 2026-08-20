@@ -47,15 +47,34 @@ def score_trait(measurement: MeasurementResult, species: str) -> ScoreResult:
     # The rules module owns the bands, so this check belongs here rather than
     # in measurement, which computes the uncertainty but cannot know what it
     # is being compared against.
-    if measurement.uncertainty is not None:
-        band = _band_width(measurement.trait_id, species)
-        if band and measurement.uncertainty >= UNCERTAINTY_BAND_FRACTION * band:
-            return ScoreResult(trait_id=measurement.trait_id, score_1_9=None,
-                               confidence=0.0)
+    band = _band_width(measurement.trait_id, species)
+    if measurement.uncertainty is not None and band:
+        if measurement.uncertainty >= UNCERTAINTY_BAND_FRACTION * band:
+            return ScoreResult(
+                trait_id=measurement.trait_id, score_1_9=None, confidence=0.0,
+                not_scored_reason=(
+                    f"too imprecise to score: the landmarks this trait uses "
+                    f"put the value within +/-{measurement.uncertainty:.0f} "
+                    f"{measurement.unit}, against a scoring range only "
+                    f"{band:g} wide - every 1-9 bin falls inside that"))
 
     score, rule_confidence = score_from_value(measurement.trait_id, species, measurement.value)
     if score is None:
-        return ScoreResult(trait_id=measurement.trait_id, score_1_9=None, confidence=0.0)
+        # Out of range. WHY matters, and the uncertainty distinguishes the two
+        # cases. A value that is far outside its band while being precisely
+        # measured is not an unusual animal - it is landmarks in the wrong
+        # place, and saying "outside the calibrated range" implies the opposite.
+        precise = (measurement.uncertainty is not None and band
+                   and measurement.uncertainty < 0.25 * band)
+        reason = (
+            f"measured {measurement.value:.2f} {measurement.unit}, outside the "
+            f"calibrated range. The measurement itself is tight "
+            f"(+/-{measurement.uncertainty:.2f}), so the landmarks it was "
+            f"built from are more likely wrong than the animal unusual"
+            if precise else
+            "measured value outside calibrated range for this trait")
+        return ScoreResult(trait_id=measurement.trait_id, score_1_9=None,
+                           confidence=0.0, not_scored_reason=reason)
 
     return ScoreResult(
         trait_id=measurement.trait_id,

@@ -128,3 +128,40 @@ def test_real_traits_carry_an_uncertainty_through_measurement():
         f"a 4% segment should be highly uncertain, got {m.uncertainty:.1f}")
     assert score_trait(m, "cattle").score_1_9 is None, (
         "and that uncertainty must actually stop the score")
+
+
+# --- the reason has to distinguish the two failures -----------------------
+# "Outside the calibrated range" reads as "this animal is unusual". When the
+# measurement is tight and still far outside anatomy, the opposite is true:
+# the landmarks are in the wrong place. Saying the wrong one sends whoever
+# reads it looking at the animal instead of at the photograph.
+
+def test_an_imprecise_refusal_says_it_was_imprecise():
+    m = _measurement("foot_angle", 52.0, 25.0)
+    r = score_trait(m, "cattle")
+    assert r.score_1_9 is None
+    assert "imprecise" in r.not_scored_reason
+    assert "25" in r.not_scored_reason, "it should quote the actual figure"
+
+
+def test_a_tight_value_far_outside_its_band_blames_the_landmarks():
+    """Precise and impossible means bad inputs, not a strange animal."""
+    m = _measurement("foot_angle", 140.0, 1.0)          # band is 40..65
+    r = score_trait(m, "cattle")
+    assert r.score_1_9 is None
+    assert "landmarks" in r.not_scored_reason
+    assert "more likely wrong than the animal unusual" in r.not_scored_reason
+
+
+def test_a_loose_value_outside_its_band_makes_no_such_claim():
+    """With a wide error bar there is no basis for blaming either one."""
+    m = _measurement("foot_angle", 140.0, 12.0)
+    r = score_trait(m, "cattle")
+    assert r.score_1_9 is None
+    assert "landmarks" not in r.not_scored_reason
+
+
+def test_a_scored_trait_carries_no_reason():
+    r = score_trait(_measurement("foot_angle", 52.0, 1.0), "cattle")
+    assert r.score_1_9 is not None
+    assert r.not_scored_reason is None

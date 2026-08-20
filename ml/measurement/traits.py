@@ -111,6 +111,35 @@ def _angle_uncertainty(points: List[Keypoint], scale_px: float,
     return math.degrees(math.atan2(err_px, shortest))
 
 
+def _ratio_uncertainty(points: List[Keypoint], scale_px: float,
+                       value: Optional[float]) -> Optional[float]:
+    """How much a ratio of two distances could be out by, from keypoint error.
+
+    Same principle as the angle case, propagated through a quotient: each
+    distance carries a fixed absolute error, so a SHORT distance carries a
+    large relative one, and the ratio inherits both.
+
+        d(r)/r = sqrt( (e/d1)^2 + (e/d2)^2 )
+
+    body_length_to_height_ratio is the trait this catches. It divides
+    chest_front-to-pin by withers-to-hoof, and chest_front is the weakest
+    trained landmark at PCK@0.02 0.429 - it lands well behind the actual
+    brisket, so the body reads as HALF its own height, a median of 0.5 against
+    a band of 0.9 to 1.4. A cow cannot be half as long as it is tall, and the
+    ratio should not be scored as though it might be.
+    """
+    if scale_px <= 0 or value is None or len(points) < 4:
+        return None
+    err = KEYPOINT_ERR_FRAC * scale_px * math.sqrt(2.0)
+    d1 = _pixel_distance(points[0], points[1])
+    d2 = _pixel_distance(points[2], points[3])
+    if d1 <= 0 or d2 <= 0:
+        return None
+    rel = math.sqrt((err / d1) ** 2 + (err / d2) ** 2)
+    return abs(value) * rel
+
+
+
 def _pixel_distance(a: Keypoint, b: Keypoint) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
@@ -317,6 +346,7 @@ def measure_trait(
             value = _compute_angle(points)
     elif trait_class == "B":
         value = _compute_ratio(points)
+        uncertainty = _ratio_uncertainty(points, _animal_scale(keypoints), value)
     elif trait_class == "SMAL":
         # SMAL traits (Heart Girth, Body Condition Score) require a 3D mesh
         # fit and are not derivable from a single 2D distance/angle. Refuse

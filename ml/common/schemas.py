@@ -68,6 +68,10 @@ class ScoreResult:
     trait_id: str
     score_1_9: Optional[int]
     confidence: float
+    # Why there is no score. Set here rather than inferred downstream,
+    # because only this module knows BOTH the measurement's uncertainty
+    # and the width of the band it was being compared against.
+    not_scored_reason: Optional[str] = None
 
 
 @dataclass

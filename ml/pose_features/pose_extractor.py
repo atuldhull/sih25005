@@ -81,6 +81,28 @@ COLLAPSE_MIN_SEPARATION_FRAC = 0.005   # of the animal box's longer side
 # the coin-flip argument was actually about.
 COLLAPSE_KEEP_RATIO = 1.5
 
+# When two joints collapse and are equally confident, anatomy can still tell
+# them apart. The pose model confuses pin with knee on 41 of 50 photographs -
+# never through low confidence, always by predicting both at the same pixel -
+# and that one confusion is the single largest cause of missing landmarks:
+# pin_left survives on 8 images of 50, knee_left on 9.
+#
+# But a pin bone and a carpus are nowhere near each other. The pin sits at the
+# rear by the tail; the knee is a fore-leg joint near the shoulder. There is
+# only ONE point in dispute, so the question is which LABEL belongs at it, and
+# that is answerable: whichever anchor the point is nearer to. Measured on the
+# collisions, the separation is not marginal - typical distances to the two
+# anchors are 0.04 against 0.43 of the animal's size.
+#
+# Each entry is the landmark a joint should be found near. Anchors are chosen
+# to be joints that do not themselves take part in these collisions.
+ANATOMIC_ANCHOR = {
+    "pin_left": "tail_head", "pin_right": "tail_head",
+    "hook_left": "tail_head", "hook_right": "tail_head",
+    "knee_left": "shoulder_left", "knee_right": "shoulder_right",
+    "chest_front": "withers",
+}
+
 _model = None
 _load_error: Optional[str] = None
 
@@ -161,6 +183,29 @@ def _same_landmark_other_side(a: str, b: str) -> bool:
     return False
 
 
+
+def _decide_by_anatomy(na, nb, shared, kps):
+    """Which of two collided labels does NOT belong at this point?
+
+    Returns the name to discard, or None when anatomy cannot say. Both joints
+    are at the same place, so this is not asking where they are - it is asking
+    which name is the right one for a point that is already fixed.
+    """
+    anchor_a = ANATOMIC_ANCHOR.get(na)
+    anchor_b = ANATOMIC_ANCHOR.get(nb)
+    if not anchor_a or not anchor_b or anchor_a == anchor_b:
+        return None
+    pa, pb = kps.get(anchor_a), kps.get(anchor_b)
+    if not pa or not pb or pa[2] <= 0 or pb[2] <= 0:
+        return None                     # no reliable reference to judge against
+    da = (shared[0] - pa[0]) ** 2 + (shared[1] - pa[1]) ** 2
+    db = (shared[0] - pb[0]) ** 2 + (shared[1] - pb[1]) ** 2
+    if da == db:
+        return None
+    # Keep the label whose anchor the point is nearer to; discard the other.
+    return nb if da < db else na
+
+
 def _drop_collapsed(
     kps: Dict[str, Tuple[float, float, float]],
     animal_bbox: Sequence[float],
@@ -182,6 +227,10 @@ def _drop_collapsed(
             if _same_landmark_other_side(na, nb):
                 continue
             if abs(va[0] - vb[0]) > reach or abs(va[1] - vb[1]) > reach:
+                continue
+            decided = _decide_by_anatomy(na, nb, va, kps)
+            if decided is not None:
+                bad.add(decided)
                 continue
             hi, lo = (va[2], vb[2]) if va[2] >= vb[2] else (vb[2], va[2])
             if lo > 0 and hi >= COLLAPSE_KEEP_RATIO * lo:

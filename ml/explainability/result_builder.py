@@ -1,4 +1,4 @@
-﻿"""Result contract builder: final assembly point producing the top-level ScoringResult."""
+"""Result contract builder: final assembly point producing the top-level ScoringResult."""
 
 from dataclasses import is_dataclass
 from typing import Dict, List, Optional
@@ -181,7 +181,10 @@ def to_contract_dict(
                     "not_scored_reason": (
                         global_not_scored_reason
                         if global_not_scored_reason
-                        else (
+                        else (score.not_scored_reason
+                              if score is not None
+                              and getattr(score, "not_scored_reason", None)
+                              else (
                             "; ".join(measurement.flags)
                             if measurement and measurement.flags
                             else (
@@ -194,7 +197,7 @@ def to_contract_dict(
                                 if measurement and measurement.value is not None
                                 else "required keypoints not available"
                             )
-                        )
+                        ))
                     ),
                 }
             )
