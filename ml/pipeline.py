@@ -20,6 +20,7 @@ from ml.pose_features.embedding_extractor import (
 from ml.pose_features.silhouette_landmarks import (
     add_derived_landmarks,
     add_rear_view_landmarks,
+    facing_sign,
 )
 from ml.pose_features.pose_extractor import (
     PoseBackendError,
@@ -201,6 +202,8 @@ def score_animal(
     tag_result = None
     scale_factor = None
     scale_confidence = 0.0
+    closeup_scale = None
+    closeup_err = 0.056
     if tag_bbox is not None:
         try:
             from ml.detection.detector import _get_cv2
@@ -230,17 +233,20 @@ def score_animal(
                     # conformant tag, and its own measurements - and is NOT
                     # applied to the body.
                     #
-                    # Recovering a side-photo scale from a close-up is
-                    # possible in principle: the close-up gives this tag's
-                    # true panel size in cm, and the same panel measured in
-                    # the side photo would then give that photo's scale. It
-                    # needs the panel located in the side photo, and is not
-                    # built. Until it is, the honest answer is no scale.
+                    # It CAN be carried across, but not from here: the
+                    # transfer needs to know which way the animal is facing so
+                    # it looks for the tag at the HEAD end, and pose has not
+                    # run yet. Searching the whole animal would let any yellow
+                    # object near it become the ruler. The close-up's scale is
+                    # held and used after Stage 4a.
+                    closeup_scale = scale_factor
+                    closeup_err = (tag_result.get("scale") or {}).get(
+                        "error_frac", 0.056)
+                    scale_factor, scale_confidence = None, 0.0
                     tag_result.setdefault(
                         "scale_note",
                         "measured in the close-up photo, which has its own "
                         "pixel scale - not applied to body measurements")
-                    scale_factor, scale_confidence = None, 0.0
         except Exception as exc:  # never let the ruler kill the run
             tag_result = {"identity": None, "scale": None,
                           "refused_reason": f"tag_scale_failed: {exc}"}
@@ -366,6 +372,40 @@ def score_animal(
         return _build_not_scored(animal_id, species, "; ".join(reasons),
                                  quality_passed, captured,
                                  breed_fields=breed_fields)
+
+    # ---- Carrying the close-up's scale to the side photograph -------------
+    # One physical object appears in both shots. The close-up gives this tag's
+    # own height in centimetres - measured against the 18 mm digit row, not
+    # assumed, which is what makes it usable at all when a panel is 55-69 mm
+    # depending on the supplier. Finding that same tag at the head end of the
+    # side photograph then gives the side photograph's own scale.
+    #
+    # Runs here rather than in Stage 3 because it needs the facing direction,
+    # which comes from the pose.
+    if closeup_scale is not None and keypoints:
+        try:
+            from ml.detection.detector import _get_cv2 as _cv
+            from ml.tag_intelligence.panel_transfer import (TransferredScale,
+                                                            transfer)
+            moved = transfer(_cv().imread(side_img), animal_bbox,
+                             facing_sign(keypoints, animal_bbox),
+                             _cv().imread(tag_source), tag_bbox,
+                             closeup_scale, closeup_error_frac=closeup_err)
+            if isinstance(moved, TransferredScale):
+                scale_factor = moved.cm_per_px
+                # never more certain than the close-up it came from, and it
+                # carries the ear's parallax on top of that
+                scale_confidence = max(0.0,
+                                       min(1.0, 1.0 - moved.error_frac * 4.0))
+                if tag_result is not None:
+                    tag_result["scale_note"] = moved.note
+                    tag_result["scale_method"] = moved.method
+            elif tag_result is not None:
+                tag_result["scale_note"] = getattr(
+                    moved, "reason", "scale could not be transferred")
+        except Exception as exc:
+            if tag_result is not None:
+                tag_result["scale_note"] = f"scale_transfer_failed: {exc}"
 
     # ---- Stages 5-6: Measurement -> Scoring -> Status -----------------------
     measurements: List[MeasurementResult] = measure_all_traits(

@@ -13,11 +13,17 @@ is not an obvious failure - it is a set of plausible-looking centimetres that
 are wrong by a factor nobody can see, and the plausibility guards would reject
 only the most absurd of them, leaving the rest to be quietly believed.
 
-Recovering a side-photo scale from a close-up IS possible in principle: the
-close-up gives this tag's true panel size in centimetres, and that same panel
-measured in the side photograph would then give the side photograph's scale.
-It needs the panel located in the side photo and is not built. Until it is,
-the honest answer is that there is no scale, and the class-C traits say so.
+A close-up scale CAN be carried across, and now is - see
+ml/tag_intelligence/panel_transfer.py. The close-up gives this tag's own
+height in centimetres, measured against the 18 mm digit row rather than
+assumed, and finding that same tag at the head end of the side photograph
+gives the side photograph's scale. What must never happen is the raw
+substitution these tests guard against.
+
+The side photographs here contain no tag, so the transfer correctly refuses
+and the class-C traits stay unmeasured - which is what makes these tests still
+about the substitution rather than about the transfer. The transfer's own
+behaviour is covered in ml/tests/tag_intelligence/test_panel_transfer.py.
 """
 import cv2
 import numpy as np
