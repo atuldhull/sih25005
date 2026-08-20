@@ -52,6 +52,14 @@ KNOWN_SCHEMA_GAPS = {
     "angularity": ["rib_angle_top", "rib_angle_mid", "rib_angle_bottom"],
 }
 
+# Deliberately absent from the schema, for a different reason: these are
+# rear-frame COPIES of joints the side view also has, made when the two views
+# are merged, so that a rear-view trait can use a hock without being measured
+# against the side photograph's hock in a different coordinate frame. They are
+# not predicted by anything, so they do not belong in a schema whose 41 entries
+# mirror the trained checkpoint's keypoint list.
+VIEW_SCOPED_ALIASES = {"rear_hock_left", "rear_hock_right"}
+
 
 @pytest.mark.parametrize("trait", TRAIT_REGISTRY,
                          ids=[t["trait_id"] for t in TRAIT_REGISTRY])
@@ -60,6 +68,7 @@ def test_every_required_keypoint_exists_in_the_schema(trait):
     would refuse forever with a reason that looks like missing annotation."""
     from ml.pose_features.keypoint_schema import KEYPOINT_INDEX_BY_NAME
     allowed = set(KNOWN_SCHEMA_GAPS.get(trait["trait_id"], []))
+    allowed |= VIEW_SCOPED_ALIASES
     for joint in trait.get("required_keypoints", []):
         if joint in allowed:
             continue

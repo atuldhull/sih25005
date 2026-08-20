@@ -347,6 +347,29 @@ REAR_VIEW_JOINTS = frozenset({
 # The udder sits in the middle of a rear view; the hind legs are at the edges.
 UDDER_CENTRE_FRAC = 0.34
 
+# Rear-frame copies of joints the SIDE view also has, kept under distinct names.
+#
+# udder_depth is the reason. ICAR measures it from the udder floor to the hock,
+# and the hock is not an udder landmark - so the trait needed udder_floor,
+# which is merged from the rear photo, together with hock_left, which is not,
+# and stayed in SIDE-photo pixels. The distance between them was computed
+# across two coordinate frames. It did not fail; it produced 74.7 cm against a
+# calibrated band of -10 to 25, which reads as an animal with an extraordinary
+# udder rather than as a units error.
+#
+# The docstring below already said rear coordinates "must never be mixed into
+# a side-view distance". The assumption that made it safe - that every udder
+# trait is measured entirely within the rear view - was simply not true of
+# this one.
+#
+# These names are deliberately absent from KEYPOINT_SCHEMA: the schema's 41
+# entries correspond to the trained checkpoint's own keypoint list, and these
+# are not predicted, they are copies made at merge time.
+REAR_FRAME_ALIASES = {
+    "hock_left": "rear_hock_left",
+    "hock_right": "rear_hock_right",
+}
+
 
 def derive_udder_floor(mask: np.ndarray, animal_bbox: Sequence[float]
                        ) -> Optional[Tuple[float, float, float]]:
@@ -393,7 +416,9 @@ def add_rear_view_landmarks(
     """Merge rear-view joints into the side-view keypoints.
 
     ONLY joints in REAR_VIEW_JOINTS are taken, and only when the side view
-    does not already have them. Coordinates from a rear photo are in the REAR
+    does not already have them - plus the REAR_FRAME_ALIASES, which are copies
+    of joints the side view also has, kept under distinct names so a rear-view
+    trait can use them without either value overwriting the other. Coordinates from a rear photo are in the REAR
     image's frame, which is a different frame from the side photo - so these
     are usable for measurements taken entirely within the rear view (all the
     udder traits are), and must never be mixed into a side-view distance.
@@ -402,6 +427,15 @@ def add_rear_view_landmarks(
     prov: Dict[str, str] = {}
 
     if rear_kps:
+        # rear-frame copies first, under their own names, so a rear-view trait
+        # can reference a joint the side view also has without either
+        # overwriting the other or being measured across two frames
+        for src, alias in REAR_FRAME_ALIASES.items():
+            v = rear_kps.get(src)
+            if v and len(v) >= 3 and v[2] > 0:
+                out[alias] = v
+                prov[alias] = "detected_in_rear_view"
+
         for name, v in rear_kps.items():
             if name not in REAR_VIEW_JOINTS:
                 continue

@@ -268,7 +268,12 @@ CONTRACT_TRAITS = [
         "category": "Udder",
         "trait_class": "C",
         "view": "rear",
-        "required_keypoints": ["udder_floor", "hock_left"],
+        # rear_hock_left, NOT hock_left. udder_floor is merged from the rear
+        # photograph and hock_left is not, so the pair spanned two coordinate
+        # frames and produced 74.7 cm against a band of -10 to 25 - a units
+        # error wearing the shape of a plausible measurement. See
+        # REAR_FRAME_ALIASES in ml/pose_features/silhouette_landmarks.py.
+        "required_keypoints": ["udder_floor", "rear_hock_left"],
         "required_scale": True,
         "unit": "cm",
         "smal_fallback": True,

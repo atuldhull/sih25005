@@ -234,6 +234,19 @@ def _compute_distance(points: List[Keypoint], scale_factor: float) -> Optional[f
     return _pixel_distance(points[0], points[1]) * scale_factor
 
 
+def _compute_signed_drop(points: List[Keypoint],
+                         scale_factor: float) -> Optional[float]:
+    """How far the FIRST point sits below the second, in cm, signed.
+
+    Image y grows downward, so first-below-second is a positive y difference.
+    Used where the sign carries meaning - an udder floor above the hock is a
+    different animal from one below it, and a magnitude cannot say which.
+    """
+    if len(points) < 2 or scale_factor is None:
+        return None
+    return (points[0][1] - points[1][1]) * scale_factor
+
+
 def _compute_vertical_distance(points: List[Keypoint], scale_factor: float) -> Optional[float]:
     """Vertical-only pixel distance between the first two points, scaled into
     cm. See _pixel_vertical_distance for why this differs from
@@ -264,8 +277,20 @@ IMPOSSIBLE_OUTSIDE = {
     "ratio": (0.0, 20.0),
 }
 
+# Traits whose value is SIGNED, measured relative to a reference landmark
+# rather than as an absolute size. The bounds above assume a magnitude - the
+# 1 cm floor exists to catch a degenerate keypoint pair producing a 0.5 cm
+# chest - and applying that to a signed trait refuses the whole negative half
+# of its range.
+#
+# udder_depth is the case: an udder floor ABOVE the hock reads negative, is a
+# well-attached udder, and is exactly what the -10 end of its calibrated band
+# describes. Refusing it would have made a high udder indistinguishable from
+# an unmeasurable one.
+SIGNED_TRAITS = frozenset({"udder_depth"})
 
-def _is_impossible(value, unit):
+
+def _is_impossible(value, unit, trait_id=None):
     """True when a value cannot describe a real animal, so must be refused."""
     if value is None:
         return False
@@ -273,6 +298,9 @@ def _is_impossible(value, unit):
     if bounds is None:
         return False
     lo, hi = bounds
+    if trait_id in SIGNED_TRAITS:
+        # the magnitude still has to be possible; the sign carries meaning
+        return abs(float(value)) > hi
     return not (lo <= float(value) <= hi)
 
 
@@ -364,7 +392,19 @@ def measure_trait(
             flags=["not_measurable", "requires_3d_model"],
         )
     else:  # Class C
-        if trait_id in ("stature", "body_depth"):
+        if trait_id == "udder_depth":
+            # SIGNED, and vertical only. ICAR measures udder depth relative to
+            # the hock: an udder floor ABOVE the hock is a well-attached udder
+            # and scores differently from one hanging below it. The calibrated
+            # band says so - it runs from -10 to 25 cm - but a Euclidean
+            # distance is a magnitude and can never be negative, so the whole
+            # negative half of that band was unreachable and a high udder was
+            # being reported as a low one of the same size.
+            #
+            # Positive means the floor is BELOW the hock, which is the
+            # direction the band's positive half describes.
+            value = _compute_signed_drop(points, scale_factor)
+        elif trait_id in ("stature", "body_depth"):
             # Both are height measurements per the trait definition, not
             # diagonal/straight-line distances (unlike e.g. Body Length,
             # which is genuinely front-to-back and correctly uses the full
@@ -392,7 +432,7 @@ def measure_trait(
     # happens when two keypoints collapse onto nearly the same pixel, or when
     # the scale is wrong by an order of magnitude - both of which produce a
     # confident-looking number rather than an obvious failure.
-    if _is_impossible(value, unit):
+    if _is_impossible(value, unit, trait_id):
         return MeasurementResult(
             trait_id=trait_id,
             trait_class=trait_class,
