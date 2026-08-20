@@ -29,6 +29,18 @@ from typing import Dict, Optional, Sequence, Tuple
 
 from ml.config.models import POSE_MIN_KEYPOINT_CONFIDENCE, POSE_MODEL_PATH
 
+# Two DIFFERENT joints predicted at the same pixel are mutually
+# invalidating - at most one can be right, and there is no way to tell
+# which. Measured on a real photo: knee_left (2158, 2149) and pin_left
+# (2160, 2154) landed 5 px apart on a 3066 px animal, as did chest_front
+# and hook_left. The angle built on that knee then came out at 74.8 deg
+# against a rule table expecting 130-160, so every leg trait refused.
+#
+# The geometry was right the whole time; the joints were wrong. Nothing
+# downstream could have detected that, because a collapsed pair looks
+# exactly like a confident measurement.
+COLLAPSE_MIN_SEPARATION_FRAC = 0.02   # of the animal box's longer side
+
 _model = None
 _load_error: Optional[str] = None
 
@@ -88,7 +100,53 @@ def extract_keypoints(
             out[name] = (float(kp.x), float(kp.y), 0.0)
         else:
             out[name] = (float(kp.x), float(kp.y), conf)
-    return out
+    return _drop_collapsed(out, animal_bbox)
+
+
+def _same_landmark_other_side(a: str, b: str) -> bool:
+    """Is this the SAME landmark on the left and right side?
+
+    On a side-on photograph the near and far legs overlap, so pastern_left
+    and pastern_right genuinely land within a few pixels of each other - as do
+    the hocks and the hip bones. That is correct geometry, not a model
+    failure, and an earlier version of the collapse filter threw all of them
+    away: 19 usable joints down to 6.
+
+    Only pairs that are anatomically distinct can invalidate each other.
+    """
+    for suffix in ("_left", "_right"):
+        other = "_right" if suffix == "_left" else "_left"
+        if a.endswith(suffix) and b.endswith(other):
+            return a[: -len(suffix)] == b[: -len(other)]
+    return False
+
+
+def _drop_collapsed(
+    kps: Dict[str, Tuple[float, float, float]],
+    animal_bbox: Sequence[float],
+) -> Dict[str, Tuple[float, float, float]]:
+    """Refuse joints that landed on top of another joint.
+
+    When two distinct landmarks share a pixel the model has not separated
+    them, and any measurement spanning either is meaningless while still
+    looking confident. Both are refused rather than guessing which is real -
+    keeping the higher-confidence one would be a coin flip, and the whole
+    point is that we cannot tell.
+    """
+    x1, y1, x2, y2 = (float(v) for v in animal_bbox)
+    reach = COLLAPSE_MIN_SEPARATION_FRAC * max(1.0, max(x2 - x1, y2 - y1))
+    live = [(n, v) for n, v in kps.items() if v[2] > 0]
+    bad = set()
+    for i, (na, va) in enumerate(live):
+        for nb, vb in live[i + 1:]:
+            if _same_landmark_other_side(na, nb):
+                continue
+            if abs(va[0] - vb[0]) <= reach and abs(va[1] - vb[1]) <= reach:
+                bad.add(na)
+                bad.add(nb)
+    if not bad:
+        return kps
+    return {n: ((v[0], v[1], 0.0) if n in bad else v) for n, v in kps.items()}
 
 
 def usable_joint_count(

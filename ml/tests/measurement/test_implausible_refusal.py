@@ -50,3 +50,42 @@ def test_unknown_unit_is_left_alone():
 def test_every_policed_unit_has_a_sane_bound():
     for unit, (lo, hi) in IMPOSSIBLE_OUTSIDE.items():
         assert lo < hi, f"{unit} bounds inverted"
+
+
+# --- fore_leg_set convention ----------------------------------------------
+# fore_leg_set is the FORE-leg analogue of rear_legs_rear_view: same four-point
+# layout, same signed deviation-from-vertical rule band. It was falling through
+# to the generic absolute-angle path and returned 84.1 degrees on a real
+# animal - a quantity its -8..+8 rule cannot score, so it refused every time.
+# rear_legs_rear_view was the only leg trait that ever scored, and this is why.
+
+def test_fore_leg_set_returns_a_signed_deviation_not_an_absolute_angle():
+    from ml.measurement.traits import measure_trait
+    # legs hanging straight down from the shoulders: deviation ~0
+    straight = {
+        "shoulder_left": (100.0, 100.0, 0.9),
+        "shoulder_right": (200.0, 100.0, 0.9),
+        "hoof_left": (100.0, 400.0, 0.9),
+        "hoof_right": (200.0, 400.0, 0.9),
+    }
+    m = measure_trait("fore_leg_set", straight)
+    assert m.value is not None
+    assert abs(m.value) < 5.0, f"straight legs should be near 0, got {m.value}"
+    # and it must land inside the rule band, not near 90
+    assert -20.0 < m.value < 20.0
+
+
+def test_fore_leg_set_detects_an_inward_lean():
+    """Both hooves tucked inward must register, not cancel to zero."""
+    from ml.measurement.traits import measure_trait
+    knock_kneed = {
+        "shoulder_left": (100.0, 100.0, 0.9),
+        "shoulder_right": (200.0, 100.0, 0.9),
+        "hoof_left": (140.0, 400.0, 0.9),      # leans right
+        "hoof_right": (160.0, 400.0, 0.9),     # leans left
+    }
+    m = measure_trait("fore_leg_set", knock_kneed)
+    assert m.value is not None
+    assert abs(m.value) > 3.0, (
+        f"a symmetric inward lean must register, got {m.value} - if this is "
+        f"near zero the left/right mirroring has been lost")

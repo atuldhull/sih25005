@@ -93,8 +93,9 @@ def _compute_angle(points: List[Keypoint]) -> Optional[float]:
 def _compute_leg_set_angle(points: List[Keypoint]) -> Optional[float]:
     """Per-leg deviation from vertical, averaged left/right, for leg-set traits.
 
-    Expects points ordered [hip_left, hip_right, hock_left, hock_right], matching
-    rear_legs_set's required_keypoints order. Each leg's hip->hock vector angle
+    Expects four points ordered [upper_left, upper_right, lower_left,
+    lower_right] - hip/hock for rear_legs_rear_view, shoulder/hoof for
+    fore_leg_set. Each leg's hip->hock vector angle
     from vertical (0 = straight down) is computed independently. The right leg's
     deviation is mirrored before averaging: the right side is anatomically
     mirrored relative to the left, so without mirroring, a symmetric inward lean
@@ -216,7 +217,15 @@ def measure_trait(
         )
 
     if trait_class == "A":
-        if trait_id == "rear_legs_rear_view":
+        # fore_leg_set is the FORE-leg analogue of rear_legs_rear_view: the
+        # same four-point layout (two upper joints, two lower joints) and the
+        # same signed deviation-from-vertical rule band (-8 to +8, against
+        # rear_legs_rear_view's -10 to +10). It was falling through to the
+        # generic absolute-angle path instead, which returned 84.1 degrees on
+        # a real animal - a quantity the rule table cannot score at all, so
+        # the trait refused every time. rear_legs_rear_view was the only leg
+        # trait that ever scored, and this is why.
+        if trait_id in ("rear_legs_rear_view", "fore_leg_set"):
             # Rear Legs Rear View: rear-view cow-hock deviation-from-vertical,
             # per-leg (see _compute_leg_set_angle's docstring). This geometry
             # was previously mis-attached to rear_legs_set; rear_legs_set now
