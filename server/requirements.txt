@@ -7,3 +7,18 @@ pillow
 faster-whisper
 pyttsx3
 edge-tts
+
+# --- ML pipeline -----------------------------------------------------------
+# NOT duplicated here on purpose - see ml/requirements.txt for the pinned
+# versions, so there is one source of truth for them.
+#
+# But they DO belong in THIS environment. server/scoring_loader.py does
+# importlib.import_module("ml.pipeline"), which runs in the server's own
+# process, so the pipeline's libraries are the server's libraries. Installing
+# them into a separate venv does nothing.
+#
+#     pip install -r ml/requirements.txt
+#
+# Until that is done the loader keeps using the baseline engine and logs the
+# reason to stderr only, which on stage looks like "the ML does not work".
+# server/preflight.py FAILS loudly for this once ml/pipeline.py exists.
