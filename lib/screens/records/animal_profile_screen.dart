@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../services/animal_cache_service.dart';
 import '../../services/api_service.dart';
+import '../assistant/chat_screen.dart';
+import 'history_screen.dart';
 
 /// Displays an animal's profile with live API data and offline cache fallback.
 ///
@@ -138,6 +140,41 @@ class _AnimalProfileScreenState extends State<AnimalProfileScreen> {
         _EligibilityCard(profile: profile),
         const SizedBox(height: 24),
         _StartScoringButton(onStartScoring: widget.onStartScoring),
+        const SizedBox(height: 12),
+
+        // Everything about this animal, reachable from her own record: her
+        // past sessions, and the assistant that answers from them.
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => HistoryScreen(animalId: widget.animalId),
+              ),
+            ),
+            icon: const Icon(Icons.timeline),
+            label: const Text('Scoring History'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ChatScreen(
+                  animalId: widget.animalId,
+                  animalLabel: profile['breed']?.toString(),
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.chat_bubble_outline),
+            label: const Text('Ask about this animal'),
+          ),
+        ),
+        const SizedBox(height: 24),
       ],
     );
   }

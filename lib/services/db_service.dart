@@ -15,7 +15,7 @@ class DbService {
 
     _database = await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE sessions (
@@ -38,6 +38,8 @@ class DbService {
             profile_json TEXT
           )
         ''');
+
+        await db.execute(_createSettingsTable);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -59,6 +61,11 @@ class DbService {
           await db.execute(
             'ALTER TABLE sessions ADD COLUMN tag_photo_path TEXT',
           );
+        }
+        if (oldVersion < 4) {
+          // Somewhere to keep the server address. Hard-coding it meant a demo
+          // on a real handset could only ever talk to an emulator's loopback.
+          await db.execute(_createSettingsTable);
         }
       },
     );
@@ -129,5 +136,60 @@ class DbService {
       whereArgs: [animalId],
       orderBy: 'captured_at DESC',
     );
+  }
+
+  static const String _createSettingsTable = '''
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )
+  ''';
+
+  /// Reads one setting, or null when it has never been written.
+  static Future<String?> getSetting(String key) async {
+    final db = await database;
+    final rows = await db.query(
+      'settings',
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['value'] as String?;
+  }
+
+  /// Writes one setting, replacing any previous value.
+  static Future<void> setSetting(String key, String value) async {
+    final db = await database;
+    await db.insert('settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// How many captures are still waiting to reach the server.
+  static Future<int> countPendingSessions() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      "SELECT COUNT(*) AS n FROM sessions WHERE status = 'pending'",
+    );
+    return (rows.first['n'] as int?) ?? 0;
+  }
+
+  /// Reads one session row by its local id, or null.
+  ///
+  /// This is how a just-finished capture finds out whether its upload came
+  /// back with a scorecard: the sync service writes `result_json` here, and
+  /// the saved screen reads it back.
+  static Future<Map<String, dynamic>?> getSessionById(String id) async {
+    final db = await database;
+    final rows = await db.query(
+      'sessions',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first;
   }
 }

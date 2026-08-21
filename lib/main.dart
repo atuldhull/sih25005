@@ -2,13 +2,23 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'screens/alerts/alerts_screen.dart';
+import 'screens/assistant/assistant_home_screen.dart';
 import 'screens/capture/scan_tag_screen.dart';
 import 'screens/records/records_screen.dart';
+import 'screens/settings/settings_screen.dart';
+import 'services/settings_service.dart';
 import 'services/sync_service.dart';
 import 'widgets/sync_status_badge.dart';
 
-void main() {
+Future<void> main() async {
+  // The saved server address has to be applied before anything makes a
+  // request, or the first upload after a restart goes to the old host.
+  WidgetsFlutterBinding.ensureInitialized();
+  await SettingsService.restore();
+
   runApp(const PashuScorerApp());
+
   // Start the global sync service without blocking app rendering.
   // Safe even if the backend is offline or SQLite is empty.
   unawaited(SyncService.instance.start());
@@ -62,13 +72,16 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     ),
 
-    const Center(
-      child: Text(
-        'Settings\nComing soon',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 20),
-      ),
-    ),
+    // Feature (i): ask about one animal, answered from her record alone,
+    // in English, Hindi or Kannada.
+    const AssistantHomeScreen(),
+
+    // The veterinary officer's escalation feed. It lives in the app rather
+    // than only on the server because the officer is the person who acts on
+    // it, and they are in the field too.
+    const AlertsScreen(),
+
+    const SettingsScreen(),
   ];
 
   @override
@@ -85,21 +98,41 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         },
 
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.qr_code_scanner),
             label: 'Scan',
           ),
 
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.folder_outlined),
             selectedIcon: Icon(Icons.folder),
             label: 'Records',
           ),
 
+          const NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble),
+            label: 'Assistant',
+          ),
+
+          const NavigationDestination(
+            icon: Icon(Icons.notifications_none),
+            selectedIcon: Icon(Icons.notifications),
+            label: 'Alerts',
+          ),
+
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
+            // The count of captures still waiting rides on the Settings icon,
+            // because that is where they can be sent by hand.
+            icon: ValueListenableBuilder<int>(
+              valueListenable: SyncService.instance.pending,
+              builder: (context, count, child) => count == 0
+                  ? child!
+                  : Badge(label: Text('$count'), child: child),
+              child: const Icon(Icons.settings_outlined),
+            ),
+            selectedIcon: const Icon(Icons.settings),
             label: 'Settings',
           ),
         ],

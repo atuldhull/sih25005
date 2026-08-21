@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../models/scoring_result.dart';
+import '../../widgets/result_cards.dart';
+import '../assistant/chat_screen.dart';
 import 'trait_detail_screen.dart';
 
 /// Step 4.1 — Explainability Scorecard.
@@ -42,13 +44,42 @@ class ScorecardScreen extends StatelessWidget {
     final grouped = _groupByCategory(result.traits);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Scorecard')),
+      appBar: AppBar(
+        title: const Text('Scorecard'),
+        actions: [
+          IconButton(
+            tooltip: 'Ask about this animal',
+            icon: const Icon(Icons.chat_bubble_outline),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ChatScreen(
+                  animalId: result.animalId,
+                  animalLabel: result.breedRegistered,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Whether any of this was measured comes FIRST. Everything below it
+          // is meaningless if the answer is no.
+          EngineBanner(result: result),
           _HeaderCard(result: result),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          BreedIdentityCard(result: result),
+          WeightCard(result: result),
+          ScreeningCard(result: result),
+          const SizedBox(height: 4),
           ..._buildCategorySections(grouped),
+          if (result.farmerReport != null &&
+              result.farmerReport!.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _FarmerReportCard(text: result.farmerReport!),
+          ],
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -435,6 +466,47 @@ class _ConfidenceBar extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The plain-language summary the server writes for the farmer.
+///
+/// It already carries its own caveats - that the animal was not screened for
+/// illness, that a placeholder is a placeholder - so it is rendered verbatim
+/// rather than being re-worded here and drifting out of step with the server.
+class _FarmerReportCard extends StatelessWidget {
+  final String text;
+
+  const _FarmerReportCard({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return SectionCard(
+      background: Colors.grey.shade50,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.description_outlined,
+                size: 18,
+                color: Colors.grey.shade700,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Summary for the farmer',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(text, style: const TextStyle(height: 1.45)),
+        ],
+      ),
     );
   }
 }

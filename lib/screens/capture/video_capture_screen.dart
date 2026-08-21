@@ -579,7 +579,10 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
     });
 
     try {
-      await DbService.insertSession(widget.session);
+      // The local id is what lets the next screen push this capture to the
+      // server straight away and come back with a scorecard, instead of the
+      // farmer being told "saved" and never seeing a result.
+      final localId = await DbService.insertSession(widget.session);
 
       if (!mounted) {
         return;
@@ -587,7 +590,12 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const SessionSavedScreen()),
+        MaterialPageRoute(
+          builder: (_) => SessionSavedScreen(
+            localId: localId,
+            sidePhotoPath: widget.session.sidePhotoPath,
+          ),
+        ),
       );
     } catch (e) {
       if (kDebugMode) {

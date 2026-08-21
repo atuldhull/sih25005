@@ -239,7 +239,7 @@ class _MeasuredValueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final value = trait.measuredValue?.trim();
+    final value = trait.valueWithInterval?.trim();
 
     return Card(
       elevation: 0,
