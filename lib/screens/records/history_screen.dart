@@ -187,6 +187,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
   ];
 
   static const _weightKeys = [
+    // The one the server actually sends. GET /animal/{id}/history returns
+    // sessions shaped {session_id, date, weight_kg_mid, health_flags}, and
+    // weight_kg_mid was missing from this list - so _extractWeight returned
+    // null for every session, the trend read "No weight data available", and
+    // every row showed a dash. Verified on the emulator against live data
+    // where the server was returning weight_kg_mid: 426.
+    'weight_kg_mid',
     'weight_kg',
     'weight',
     'weight_low',
@@ -210,8 +217,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
   /// Extracts a weight in kg, preferring `{low, high}` midpoint then a
   /// direct numeric value. Returns `null` when no weight is present.
   double? _extractWeight(Map<String, dynamic> record) {
+    // weight_kg_mid first: it is what the history endpoint sends, and it is
+    // already a midpoint scalar rather than a {low, high} pair.
     // Nested weight_kg / weight maps: {low, high} or direct number.
-    for (final key in ['weight_kg', 'weight']) {
+    for (final key in ['weight_kg_mid', 'weight_kg', 'weight']) {
       final value = record[key];
       final direct = _asDouble(value);
       if (direct != null) return direct;
