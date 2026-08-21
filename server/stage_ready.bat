@@ -8,6 +8,25 @@ REM  Safe to re-run any time; it is the stage reset button.
 REM ============================================================
 cd /d "%~dp0"
 
+REM --- locate the Python environment -------------------------------------
+REM  This folder has no venv of its own: the working environment (torch,
+REM  ultralytics, pymongo, whisper) lives in the sibling checkout. Hard-coding
+REM  "venv\Scripts\python" meant these scripts failed the moment they were run
+REM  from the integration repo, which is the only place they matter now.
+REM  Prefer a local venv if someone creates one; fall back to the real one.
+set "PY=%~dp0venv\Scripts\python.exe"
+if not exist "%PY%" set "PY=D:\sih25005\server\venv\Scripts\python.exe"
+if not exist "%PY%" (
+    echo ERROR: no Python environment found.
+    echo   looked in %~dp0venv\Scripts\python.exe
+    echo   and in    D:\sih25005\server\venv\Scripts\python.exe
+    pause
+    exit /b 1
+)
+echo Using Python: %PY%
+
+
+
 REM MongoDB must be up before seeding - reuse run_server's logic
 tasklist /FI "IMAGENAME eq mongod.exe" 2>nul | find /I "mongod.exe" >nul
 if errorlevel 1 (
@@ -19,7 +38,7 @@ if errorlevel 1 (
 
 echo.
 echo ===== 1/3 stage reset: reseeding the demo story =====
-venv\Scripts\python demo_seed.py
+"%PY%" demo_seed.py
 if errorlevel 1 (
     echo SEEDING FAILED - fix the error above before the demo.
     pause
@@ -28,7 +47,7 @@ if errorlevel 1 (
 
 echo.
 echo ===== 2/3 preflight checks =====
-venv\Scripts\python preflight.py
+"%PY%" preflight.py
 if errorlevel 1 (
     echo.
     echo NO-GO - fix the [FAIL] lines above, then run this again.
