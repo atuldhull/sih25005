@@ -26,6 +26,13 @@ class Trait {
   /// Which photograph the trait was measured from - `side` or `rear`.
   final String? view;
 
+  /// Why this trait got the score it got, written by the server.
+  ///
+  /// e.g. "Measured 164.5 cm. That falls in the 160.0-170.0 cm band, which is
+  /// score 4 of 9 for cattle." A refused trait has [notScoredReason] instead;
+  /// between them every row on the scorecard can say why.
+  final String? explanation;
+
   Trait({
     required this.name,
     required this.category,
@@ -37,6 +44,7 @@ class Trait {
     this.notScoredReason,
     this.ci,
     this.view,
+    this.explanation,
   });
 
   /// True when the pipeline produced a number for this trait.
@@ -69,6 +77,7 @@ class Trait {
     notScoredReason: j['not_scored_reason']?.toString(),
     ci: j['ci']?.toString(),
     view: j['view']?.toString(),
+    explanation: j['explanation']?.toString(),
   );
 }
 

@@ -204,7 +204,10 @@ def to_contract_dict(
             continue
 
         overlay = generate_overlay_data(trait_id, keypoints)
-        explanation = generate_trait_explanation(measurement, score)
+        # species matters: a buffalo scored against the cattle band table
+        # would be told it fell in a band that does not apply to it.
+        explanation = generate_trait_explanation(
+            measurement, score, getattr(result, "species", "cattle") or "cattle")
 
         measured_value_str = (
             f"{measurement.value:.1f} {measurement.unit}"

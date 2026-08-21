@@ -15,15 +15,58 @@ def _confidence_band(confidence: float) -> str:
     return "low confidence"
 
 
-def generate_trait_explanation(measurement: MeasurementResult, score: ScoreResult) -> str:
-    """Return a short human-readable sentence explaining one trait's measurement."""
+def _band_for(trait_id: str, species: str, value: float):
+    """The (lo, hi, score) bin a value fell into, and the trait's full range."""
+    try:
+        from ml.config.rules import SPECIES_RULES
+        rule = SPECIES_RULES.get(species, {}).get(trait_id)
+        if not rule:
+            return None, None, None
+        for lo, hi, sc in rule["bins"]:
+            if lo <= value <= hi:
+                return (lo, hi, sc), rule.get("min"), rule.get("max")
+        return None, rule.get("min"), rule.get("max")
+    except Exception:
+        return None, None, None
+
+
+def generate_trait_explanation(measurement: MeasurementResult, score: ScoreResult,
+                               species: str = "cattle") -> str:
+    """Explain a trait: what was measured, and WHY that is the score it is.
+
+    This used to restate the number and its confidence - "Heart Girth measured
+    at 164.5 cm, moderate confidence (0.50)" - which tells a farmer nothing
+    they cannot already see on the row above it. The one thing a scorecard has
+    to answer is why a 5 is a 5, and the answer is that the value fell in a
+    particular band of the 1-9 scale. The scorer knows that band; nobody was
+    passing it on.
+
+    Deliberately no "good" or "bad". These scores are biological measurements,
+    not quality judgements - a 9 is not a better animal than a 3, it is a
+    differently shaped one - and the app renders every score in one neutral
+    treatment for the same reason.
+    """
     name = get_trait(measurement.trait_id)["name"]
     if measurement.value is None or score is None or score.score_1_9 is None:
         return f"{name} not measurable - required keypoints unreliable."
-    return (
-        f"{name} measured at {measurement.value:.1f} {measurement.unit}, "
-        f"{_confidence_band(measurement.confidence)} ({measurement.confidence:.2f})."
-    )
+
+    unit = measurement.unit or ""
+    band, rmin, rmax = _band_for(measurement.trait_id, species, measurement.value)
+
+    parts = [f"Measured {measurement.value:.1f} {unit}".rstrip() + "."]
+    if band:
+        lo, hi, sc = band
+        parts.append(
+            f"That falls in the {lo:.1f}-{hi:.1f} {unit}".rstrip()
+            + f" band, which is score {sc} of 9 for {species}.")
+    if rmin is not None and rmax is not None:
+        parts.append(f"The full calibrated range for this trait is "
+                     f"{rmin:g}-{rmax:g} {unit}".rstrip() + ".")
+    if measurement.uncertainty is not None:
+        parts.append(f"Uncertainty +/-{measurement.uncertainty:.1f} {unit}".rstrip() + ".")
+    parts.append(f"Landmark confidence {_confidence_band(measurement.confidence)} "
+                 f"({measurement.confidence:.2f}).")
+    return " ".join(parts)
 
 
 from ml.measurement.traits import (  # noqa: E402
@@ -65,6 +108,7 @@ def assemble_explainability(
     measurements: List[MeasurementResult],
     scores: List[ScoreResult],
     keypoints: dict,
+    species: str = "cattle",
 ) -> dict:
     """Assemble per-trait text explanations and overlay data for all traits."""
     score_by_trait = {s.trait_id: s for s in scores}
@@ -72,6 +116,6 @@ def assemble_explainability(
     overlays: List[dict] = []
     for measurement in measurements:
         score = score_by_trait.get(measurement.trait_id)
-        text_summary.append(generate_trait_explanation(measurement, score))
+        text_summary.append(generate_trait_explanation(measurement, score, species))
         overlays.append(generate_overlay_data(measurement.trait_id, keypoints))
     return {"text_summary": text_summary, "overlays": overlays}

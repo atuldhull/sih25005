@@ -292,6 +292,18 @@ class _TraitRow extends StatelessWidget {
                 _NotScoredNotice(reason: trait.notScoredReason),
                 const SizedBox(height: 8),
               ],
+
+              // A refused trait already said why. A scored one said nothing,
+              // so a 5 and a 1 looked equally arbitrary. The server knows
+              // which band the value fell into - show it, so every row on the
+              // card can answer the same question.
+              if (isScored &&
+                  trait.explanation != null &&
+                  trait.explanation!.trim().isNotEmpty) ...[
+                _WhyThisScore(text: trait.explanation!),
+                const SizedBox(height: 8),
+              ],
+
               _ConfidenceBar(confidence: trait.confidence),
             ],
           ),
@@ -505,6 +517,47 @@ class _FarmerReportCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(text, style: const TextStyle(height: 1.45)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Why a scored trait got the number it got.
+///
+/// Neutral styling on purpose. These scores are biological measurements, not
+/// quality judgements - a 9 is not a better animal than a 3, it is a
+/// differently shaped one - so this must not read as praise or criticism.
+class _WhyThisScore extends StatelessWidget {
+  final String text;
+
+  const _WhyThisScore({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.straighten, size: 15, color: Colors.grey.shade600),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.35,
+                color: Colors.grey.shade800,
+              ),
+            ),
+          ),
         ],
       ),
     );
