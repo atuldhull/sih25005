@@ -274,10 +274,24 @@ def create_session(
     # the same session, and a random id would turn every retry into a
     # duplicate record. Same animal + same bytes = same id; retake a photo
     # and the bytes change, so it correctly becomes a new session.
+    #
+    # THE EAR-TAG CLOSE-UP HAS TO BE IN THIS HASH. It was left out, and it is
+    # the one photograph the entire centimetre scale is derived from - so
+    # swapping it changed nothing: the server recognised the side, rear and
+    # video, called it a duplicate, and returned the scorecard computed from
+    # the OLD tag in 0.2 seconds without looking at the new one.
+    #
+    # In the field that is the worst possible case. A farmer whose session
+    # refused every centimetre trait for want of a readable tag walks back to
+    # the animal, takes a better close-up, resubmits - and gets the same
+    # refusal handed straight back, with no way to tell that nothing was
+    # re-measured. It was also quietly invalidating our own A/B tests of tag
+    # images, which is how it was found.
     if not device_session_id:
         h = hashlib.sha256()
         h.update(str(animal_id).encode())
-        for up in (side_photo, rear_photo, gait_video):
+        tag_for_hash = tag_photo if tag_photo is not None else tag_image
+        for up in (side_photo, rear_photo, gait_video, tag_for_hash):
             if up is None:
                 continue
             up.file.seek(0)
