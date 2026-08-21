@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/capture_session.dart';
+import '../../services/camera_permission_service.dart';
 import '../../services/demo_camera_config.dart';
 import '../../services/demo_media_service.dart';
 import 'side_photo_screen.dart';
@@ -58,6 +59,20 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
     }
 
     try {
+      // Ask before touching the camera. Declaring CAMERA in the
+      // manifest does not grant it on Android 6+, and without this
+      // the preview never appears and nothing reports why.
+      final allowed = await CameraPermissionService.ensure(forVideo: false);
+      if (!allowed) {
+        if (mounted) {
+          setState(() {
+            _cameraError = 'Camera access is needed to capture the ear tag. Allow it in Settings and try again.';
+            _isInitializing = false;
+          });
+        }
+        return;
+      }
+
       final cameras = await availableCameras();
 
       if (cameras.isEmpty) {

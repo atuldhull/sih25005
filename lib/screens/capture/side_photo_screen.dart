@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
 import '../../models/capture_session.dart';
+import '../../services/camera_permission_service.dart';
 import '../../services/demo_camera_config.dart';
 import '../../services/demo_media_service.dart';
 import '../../widgets/cow_silhouette_painter.dart';
@@ -48,6 +49,19 @@ class _SidePhotoScreenState extends State<SidePhotoScreen> {
     }
 
     try {
+      // Ask before touching the camera. Declaring CAMERA in the
+      // manifest does not grant it on Android 6+, and without this
+      // the preview never appears and nothing reports why.
+      final allowed = await CameraPermissionService.ensure(forVideo: false);
+      if (!allowed) {
+        if (mounted) {
+          setState(() {
+            _cameraError = 'Camera access is needed to capture the side photo. Allow it in Settings and try again.';
+          });
+        }
+        return;
+      }
+
       final cameras = await availableCameras();
 
       if (cameras.isEmpty) {

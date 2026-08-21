@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../models/capture_session.dart';
 import '../../services/db_service.dart';
+import '../../services/camera_permission_service.dart';
 import '../../services/demo_camera_config.dart';
 import '../../services/demo_media_service.dart';
 import 'session_saved_screen.dart';
@@ -59,6 +60,19 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
     }
 
     try {
+      // Ask before touching the camera. Declaring CAMERA in the
+      // manifest does not grant it on Android 6+, and without this
+      // the preview never appears and nothing reports why.
+      final allowed = await CameraPermissionService.ensure(forVideo: true);
+      if (!allowed) {
+        if (mounted) {
+          setState(() {
+            _isCameraReady = false;
+          });
+        }
+        return;
+      }
+
       final cameras = await availableCameras();
 
       if (cameras.isEmpty) {
