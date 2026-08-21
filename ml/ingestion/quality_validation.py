@@ -218,7 +218,16 @@ def validate_video(video_path: str) -> dict:
             total_frames = _count_frames(capture)
 
         reasons = []
-        if total_frames < MIN_FRAMES:
+        if total_frames <= 1:
+            # OpenCV happily opens a still image as a one-frame "video", so a
+            # JPEG or PNG renamed .mp4 arrives here looking like a very short
+            # clip. It is not one, and "too short" sends whoever reads it off
+            # to record a longer video, which cannot help. The app's demo mode
+            # produces exactly this file when its walking-video asset is
+            # missing: it writes the placeholder image out as demo_walking.mp4
+            # so the capture flow still completes.
+            reasons.append("not_a_video")
+        elif total_frames < MIN_FRAMES:
             reasons.append("video_too_short")
 
         sample_metrics = []

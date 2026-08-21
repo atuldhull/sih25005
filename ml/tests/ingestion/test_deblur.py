@@ -210,3 +210,44 @@ def test_the_quality_report_distinguishes_soft_from_empty(tmp_path):
     assert "no_fine_detail" not in qs["reasons"]
     # and neither stops the pipeline
     assert qs["fatal"] is False and qe["fatal"] is False
+
+
+def test_a_still_image_renamed_mp4_is_not_called_a_short_video(tmp_path):
+    """OpenCV opens a still as a one-frame video, so the file looks like a very
+    short clip. It is not one, and "video_too_short" sends whoever reads it off
+    to record a longer video - which cannot help.
+
+    This is not hypothetical: the app's demo mode writes its placeholder IMAGE
+    out as demo_walking.mp4 when the walking-video asset is missing, so that
+    the capture flow still completes end to end.
+    """
+    import shutil
+
+    import cv2
+    from ml.ingestion.quality_validation import validate_video
+    # exactly what DemoMediaService does: image BYTES written to an .mp4 name.
+    # cv2.imwrite cannot target .mp4, and neither does the app - it copies.
+    png = tmp_path / "placeholder.png"
+    cv2.imwrite(str(png), textured())
+    still = tmp_path / "demo_walking.mp4"
+    shutil.copy(str(png), str(still))
+    q = validate_video(str(still))
+    assert q["passed"] is False
+    assert "not_a_video" in q["reasons"], q["reasons"]
+    assert "video_too_short" not in q["reasons"]
+
+
+def test_a_genuinely_short_clip_still_says_too_short(tmp_path):
+    """The distinction has to cut both ways, or it is just a rename."""
+    import cv2
+    from ml.ingestion.quality_validation import MIN_FRAMES, validate_video
+    clip = tmp_path / "short.mp4"
+    w = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*"mp4v"), 30.0, (320, 240))
+    if not w.isOpened():
+        import pytest
+        pytest.skip("no mp4 encoder available in this OpenCV build")
+    for _ in range(max(2, MIN_FRAMES // 3)):
+        w.write(textured(320, 240))
+    w.release()
+    q = validate_video(str(clip))
+    assert "not_a_video" not in q["reasons"], q["reasons"]
