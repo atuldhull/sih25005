@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 
 import '../../models/capture_session.dart';
 import '../../services/camera_permission_service.dart';
+import '../../services/capture_source_service.dart';
 import '../../services/demo_camera_config.dart';
 import '../../services/demo_media_service.dart';
 import '../../widgets/cow_silhouette_painter.dart';
@@ -27,6 +28,13 @@ class _SidePhotoScreenState extends State<SidePhotoScreen> {
 
   /// Demo-mode live preview asset (resolved once at startup).
   String? _demoPreviewAsset;
+
+  /// True while the gallery picker is open.
+  ///
+  /// Deliberately not [_isCapturing]: the shutter must keep reading CAPTURE
+  /// while someone browses their photographs, and a second tap on GALLERY
+  /// before the picker has covered the screen must do nothing.
+  bool _isPickingFromGallery = false;
 
   // ============================================
   // INITIALIZE THE BACK CAMERA
@@ -80,7 +88,7 @@ class _SidePhotoScreenState extends State<SidePhotoScreen> {
 
       final controller = CameraController(
         camera,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
       );
 
@@ -193,6 +201,104 @@ class _SidePhotoScreenState extends State<SidePhotoScreen> {
   }
 
   // ============================================
+  // CHOOSE AN EXISTING PHOTO
+  // ============================================
+  /// A third route into the same quality gate, beside demo capture and the
+  /// real camera. Offered in both modes because it is the only one that works
+  /// on an emulator with no camera and on a phone whose camera permission was
+  /// declined - and because someone holding a photograph of an animal should
+  /// not have to change a setting before they can score it.
+  Future<void> _pickFromGallery() async {
+    // The picker is a separate activity, so a second tap can land before it
+    // covers the screen. This also refuses to open on top of a running capture.
+    if (_isPickingFromGallery || _isCapturing || _isDisposingCamera) {
+      return;
+    }
+
+    setState(() => _isPickingFromGallery = true);
+
+    try {
+      final picked = await MediaPicker.pickImage();
+
+      // MediaPicker returns null both when someone backs out and when the copy
+      // fails, so null has to stay silent - a message after a deliberate
+      // cancel would fire every time the picker is dismissed.
+      if (picked != null && mounted) {
+        final file = File(picked);
+
+        // This copy is what the upload queue reads hours later, so a missing
+        // or truncated one is worth catching now rather than at the end of
+        // the walkthrough.
+        if (await file.exists() && await file.length() > 0) {
+          if (mounted) {
+            // Same gate, same session field, same navigation as a shot photo:
+            // downstream nothing can tell the two apart.
+            await _runQualityGate(picked);
+          }
+        } else if (mounted) {
+          _showPickerError();
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        _showPickerError();
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isPickingFromGallery = false);
+    }
+  }
+
+  /// A SnackBar rather than the camera's AlertDialog: the screen behind it
+  /// stays usable, so the next tap can be GALLERY again or CAPTURE.
+  void _showPickerError() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 4),
+        content: Text(
+          'That photo could not be read. Try a different one, or use CAPTURE.',
+        ),
+      ),
+    );
+  }
+
+  // ============================================
+  // GALLERY BUTTON
+  // ============================================
+  /// Built once and reused by every layout below, so a picked photo cannot
+  /// drift onto a different route from a captured one.
+  Widget _buildGalleryButton() {
+    final busy = _isCapturing || _isPickingFromGallery;
+
+    return ElevatedButton.icon(
+      onPressed: busy ? null : _pickFromGallery,
+      icon: _isPickingFromGallery
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Icon(Icons.photo_library, size: 20),
+      label: Text(_isPickingFromGallery ? 'Opening...' : 'Gallery'),
+      // Colours are pinned in every state because this button sits on top of a
+      // photograph, where the theme's default disabled grey disappears. The
+      // disabled background stays at full opacity so the button does not seem
+      // to fade away at the moment it reports that the picker is on its way.
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.black.withValues(alpha: 0.6),
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: Colors.black.withValues(alpha: 0.6),
+        disabledForegroundColor: Colors.white70,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+    );
+  }
+
+  // ============================================
   // RUN QUALITY GATE
   // ============================================
   Future<void> _runQualityGate(String path) async {
@@ -289,10 +395,20 @@ class _SidePhotoScreenState extends State<SidePhotoScreen> {
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(
-              _cameraError!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _cameraError!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 18),
+                ),
+                const SizedBox(height: 24),
+                // Without this the screen is a dead end: no camera means no
+                // shutter, and the gallery is the only way left to finish
+                // step 2.
+                _buildGalleryButton(),
+              ],
             ),
           ),
         ),
@@ -333,7 +449,9 @@ class _SidePhotoScreenState extends State<SidePhotoScreen> {
               left: 0,
               right: 0,
               child: GestureDetector(
-                onTap: _capturePhoto,
+                // Ignore the shutter while the picker is open, so the two
+                // routes cannot both push a quality gate.
+                onTap: _isPickingFromGallery ? null : _capturePhoto,
                 child: Column(
                   children: [
                     Container(
@@ -365,6 +483,15 @@ class _SidePhotoScreenState extends State<SidePhotoScreen> {
                 ),
               ),
             ),
+
+            // ============================================
+            // GALLERY BUTTON GOES HERE
+            // ============================================
+            // Beside the shutter, not instead of it: demo capture still
+            // demonstrates the workflow, this loads a real animal. It sits
+            // clear of the shutter column because a labelled button at the
+            // circle's own height overlaps it on a 360dp-wide phone.
+            Positioned(bottom: 150, right: 20, child: _buildGalleryButton()),
           ],
         ),
       );
@@ -401,7 +528,9 @@ class _SidePhotoScreenState extends State<SidePhotoScreen> {
             left: 0,
             right: 0,
             child: GestureDetector(
-              onTap: _capturePhoto,
+              // Ignore the shutter while the picker is open, so the two
+              // routes cannot both push a quality gate.
+              onTap: _isPickingFromGallery ? null : _capturePhoto,
               child: Column(
                 children: [
                   Container(
@@ -433,6 +562,13 @@ class _SidePhotoScreenState extends State<SidePhotoScreen> {
               ),
             ),
           ),
+
+          // ============================================
+          // GALLERY BUTTON GOES HERE
+          // ============================================
+          // Same position as the demo layout so the control does not move
+          // when the mode is switched mid-demonstration.
+          Positioned(bottom: 150, right: 20, child: _buildGalleryButton()),
         ],
       ),
     );

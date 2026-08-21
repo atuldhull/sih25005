@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
+import '../../services/capture_source_service.dart';
 import '../../services/demo_camera_config.dart';
 import '../../services/settings_service.dart';
 import '../../services/sync_service.dart';
@@ -251,28 +252,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 24),
           _SectionLabel('Capture'),
 
-          ListTile(
-            leading: Icon(
-              DemoCameraConfig.enabled
-                  ? Icons.photo_library_outlined
-                  : Icons.camera_alt_outlined,
-              color: DemoCameraConfig.enabled ? const Color(0xFFEF6C00) : null,
-            ),
-            title: Text(
-              DemoCameraConfig.enabled
-                  ? 'Demo camera mode is ON'
-                  : 'Using the real camera',
-            ),
-            subtitle: Text(
-              DemoCameraConfig.enabled
-                  ? 'Capture screens use bundled photographs instead of the '
-                        'camera, so this runs on an emulator. The scorecard is '
-                        'produced from those photographs, not from the animal '
-                        'in front of you.'
-                  : 'Every capture screen uses the live camera.',
-              style: const TextStyle(height: 1.35),
-            ),
-            isThreeLine: DemoCameraConfig.enabled,
+          ValueListenableBuilder<CaptureSource>(
+            valueListenable: CaptureSourceService.source,
+            builder: (context, source, _) {
+              final demo = source == CaptureSource.demo;
+              return Column(
+                children: [
+                  SwitchListTile(
+                    value: !demo,
+                    onChanged: (useCamera) => CaptureSourceService.set(
+                      useCamera ? CaptureSource.camera : CaptureSource.demo,
+                    ),
+                    secondary: Icon(
+                      demo
+                          ? Icons.photo_library_outlined
+                          : Icons.camera_alt_outlined,
+                      color: demo ? const Color(0xFFEF6C00) : null,
+                    ),
+                    title: Text(
+                      demo ? 'Demo camera mode is ON' : 'Using the real camera',
+                    ),
+                    subtitle: Text(
+                      demo
+                          ? 'Capture screens show bundled photographs instead '
+                                'of a camera, so this runs on an emulator. The '
+                                'scorecard is produced from those photographs, '
+                                'not from the animal in front of you.'
+                          : 'Every capture screen opens the live camera. If '
+                                'the preview stays black, the camera '
+                                'permission was declined - switch back and '
+                                'grant it in Android settings.',
+                      style: const TextStyle(height: 1.35),
+                    ),
+                    isThreeLine: true,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(72, 0, 16, 12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.photo_outlined,
+                          size: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Choosing an existing photo works in both modes — '
+                            'every capture screen has a Gallery button.',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              height: 1.3,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
 
           ListTile(

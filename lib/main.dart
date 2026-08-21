@@ -7,6 +7,7 @@ import 'screens/assistant/assistant_home_screen.dart';
 import 'screens/capture/scan_tag_screen.dart';
 import 'screens/records/records_screen.dart';
 import 'screens/settings/settings_screen.dart';
+import 'services/capture_source_service.dart';
 import 'services/settings_service.dart';
 import 'services/sync_service.dart';
 import 'widgets/sync_status_badge.dart';
@@ -16,6 +17,9 @@ Future<void> main() async {
   // request, or the first upload after a restart goes to the old host.
   WidgetsFlutterBinding.ensureInitialized();
   await SettingsService.restore();
+  // Must land before the first capture screen builds, or it opens in the
+  // wrong mode and the user has to back out of it.
+  await CaptureSourceService.restore();
 
   runApp(const PashuScorerApp());
 

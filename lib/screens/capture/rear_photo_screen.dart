@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 
 import '../../models/capture_session.dart';
 import '../../services/camera_permission_service.dart';
+import '../../services/capture_source_service.dart';
 import '../../services/demo_camera_config.dart';
 import '../../services/demo_media_service.dart';
 import '../../widgets/rear_silhouette_painter.dart';
@@ -27,6 +28,13 @@ class _RearPhotoScreenState extends State<RearPhotoScreen> {
 
   /// Demo-mode live preview asset (resolved once at startup).
   String? _demoPreviewAsset;
+
+  /// True while the gallery picker is open.
+  ///
+  /// Deliberately not [_isCapturing]: that flag drives the shutter, so sharing
+  /// it made the circle spin and the label read CAPTURING... while the user
+  /// was merely browsing their photographs and nothing was being captured.
+  bool _isPickingFromGallery = false;
 
   // ============================================
   // INITIALIZE THE BACK CAMERA
@@ -80,7 +88,7 @@ class _RearPhotoScreenState extends State<RearPhotoScreen> {
 
       final controller = CameraController(
         camera,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
       );
 
@@ -193,6 +201,73 @@ class _RearPhotoScreenState extends State<RearPhotoScreen> {
   }
 
   // ============================================
+  // CHOOSE AN EXISTING PHOTO
+  // ============================================
+  /// A third route into the same quality gate, beside demo and live capture.
+  ///
+  /// On an emulator with no camera, and on a phone where camera permission was
+  /// declined, this is the only way a rear photo reaches the session at all -
+  /// so it is offered in both modes and on the camera-error screen too.
+  Future<void> _pickFromGallery() async {
+    // The picker is a separate activity, so a second tap can land before it
+    // covers the screen. This also refuses to open on top of a running capture.
+    if (_isPickingFromGallery || _isCapturing || _isDisposingCamera) {
+      return;
+    }
+
+    setState(() => _isPickingFromGallery = true);
+
+    try {
+      final path = await MediaPicker.pickImage();
+
+      // Backing out of the picker is a decision, not a failure: no message,
+      // no state change, no navigation.
+      if (path == null) {
+        return;
+      }
+
+      // MediaPicker reports a failed copy the same way it reports a
+      // cancellation, so an unreadable file is the only evidence we get that
+      // something went wrong after a photo really was chosen.
+      if (!await _isUsableImage(path)) {
+        if (mounted) {
+          _showGalleryError(
+            'That photo could not be read. Choose a different one, or capture it.',
+          );
+        }
+        return;
+      }
+
+      // From here a picked photo is indistinguishable from a shot one: same
+      // quality gate, same session field, same navigation on to step 4.
+      if (mounted) {
+        await _runQualityGate(path);
+      }
+    } catch (_) {
+      if (mounted) {
+        _showGalleryError(
+          'Unable to open the gallery. Capture the photo instead.',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPickingFromGallery = false);
+      }
+    }
+  }
+
+  /// A missing or zero-byte file would reach the quality gate as a blank
+  /// preview and only fail later, in scoring or the upload queue.
+  Future<bool> _isUsableImage(String path) async {
+    try {
+      final file = File(path);
+      return await file.exists() && await file.length() > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ============================================
   // RUN QUALITY GATE
   // ============================================
   Future<void> _runQualityGate(String path) async {
@@ -277,6 +352,49 @@ class _RearPhotoScreenState extends State<RearPhotoScreen> {
     );
   }
 
+  /// A SnackBar rather than the camera error dialog: a photo that will not
+  /// open is worth picking again straight away, not dismissing first, and the
+  /// preview underneath stays usable while it shows.
+  void _showGalleryError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
+    );
+  }
+
+  /// Built once and reused by every layout below, so a picked photo cannot
+  /// drift onto a different route from a captured one.
+  ///
+  /// Same wording, icon and styling as the other three capture steps: the
+  /// worker meets this button four times in one session and it should not look
+  /// like a different control each time.
+  Widget _buildGalleryButton() {
+    final busy = _isCapturing || _isPickingFromGallery;
+
+    return ElevatedButton.icon(
+      onPressed: busy ? null : _pickFromGallery,
+      icon: _isPickingFromGallery
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Icon(Icons.photo_library, size: 20),
+      label: Text(_isPickingFromGallery ? 'Opening...' : 'Gallery'),
+      // Colours are pinned in every state because this button sits on top of a
+      // photograph, where the theme's default disabled grey disappears.
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.black.withValues(alpha: 0.6),
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: Colors.black.withValues(alpha: 0.6),
+        disabledForegroundColor: Colors.white70,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+    );
+  }
+
   // ============================================
   // BUILD CAMERA SCREEN
   // ============================================
@@ -289,10 +407,19 @@ class _RearPhotoScreenState extends State<RearPhotoScreen> {
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(
-              _cameraError!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _cameraError!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 18),
+                ),
+                const SizedBox(height: 24),
+                // The camera is unavailable or was declined, so this is the
+                // only way to finish step 3 - a dead end otherwise.
+                _buildGalleryButton(),
+              ],
             ),
           ),
         ),
@@ -340,7 +467,9 @@ class _RearPhotoScreenState extends State<RearPhotoScreen> {
               left: 0,
               right: 0,
               child: GestureDetector(
-                onTap: _capturePhoto,
+                // Ignore the shutter while the picker is open, so the two
+                // routes cannot both push a quality gate.
+                onTap: _isPickingFromGallery ? null : _capturePhoto,
                 child: Column(
                   children: [
                     Container(
@@ -372,6 +501,15 @@ class _RearPhotoScreenState extends State<RearPhotoScreen> {
                 ),
               ),
             ),
+
+            // ============================================
+            // GALLERY BUTTON GOES HERE
+            // ============================================
+            // Beside the shutter, not instead of it. It clears the shutter
+            // column - a 72px circle plus its label reaches ~134 up from the
+            // bottom - because a right-aligned labelled button any lower
+            // clips the circle on a 360dp-wide phone.
+            Positioned(bottom: 150, right: 20, child: _buildGalleryButton()),
           ],
         ),
       );
@@ -415,7 +553,9 @@ class _RearPhotoScreenState extends State<RearPhotoScreen> {
             left: 0,
             right: 0,
             child: GestureDetector(
-              onTap: _capturePhoto,
+              // Ignore the shutter while the picker is open, so the two
+              // routes cannot both push a quality gate.
+              onTap: _isPickingFromGallery ? null : _capturePhoto,
               child: Column(
                 children: [
                   Container(
@@ -447,6 +587,13 @@ class _RearPhotoScreenState extends State<RearPhotoScreen> {
               ),
             ),
           ),
+
+          // ============================================
+          // GALLERY BUTTON GOES HERE
+          // ============================================
+          // Same position as the demo layout so the control does not move
+          // when the mode is switched mid-demonstration.
+          Positioned(bottom: 150, right: 20, child: _buildGalleryButton()),
         ],
       ),
     );

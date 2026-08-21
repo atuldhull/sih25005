@@ -11,12 +11,25 @@
 ///   takePicture(), startVideoRecording() and stopVideoRecording() exactly
 ///   as before.
 ///
-/// To switch modes, edit [enabled] below and hot-restart the app.
+/// The mode is chosen at RUNTIME from Settings - see [CaptureSourceService].
 /// ---------------------------------------------------------------------------
 class DemoCameraConfig {
-  /// Set to `true` to use bundled demo cow media.
-  /// Set to `false` to use the real camera on a physical device.
-  static const bool enabled = true;
+  /// True when the capture screens should use bundled photographs.
+  ///
+  /// This was `static const bool enabled = true`, which meant switching to the
+  /// real camera was a recompile and a full restart - and that shipping the
+  /// wrong constant to a judging table would have the app photograph a bundled
+  /// cow while pointed at a real one.
+  ///
+  /// It is a plain getter over a mutable field on purpose: every existing
+  /// `if (DemoCameraConfig.enabled)` in the four capture screens keeps working
+  /// untouched, so making the mode switchable did not mean editing the capture
+  /// flow itself. [CaptureSourceService] owns the value and persists it.
+  static bool get enabled => _enabled;
+  static bool _enabled = true;
+
+  /// Set by [CaptureSourceService] only. Nothing else should write this.
+  static set enabledInternal(bool value) => _enabled = value;
 
   /// Duration of the walking-video recording window.
   static const int videoDurationSeconds = 8;

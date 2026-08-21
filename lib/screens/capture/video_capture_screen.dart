@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 import '../../models/capture_session.dart';
 import '../../services/db_service.dart';
 import '../../services/camera_permission_service.dart';
+import '../../services/capture_source_service.dart';
 import '../../services/demo_camera_config.dart';
 import '../../services/demo_media_service.dart';
 import 'session_saved_screen.dart';
@@ -38,6 +39,12 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
   bool _isSaving = false;
   bool _isStopping = false;
 
+  /// True from the moment Gallery is tapped until the picked clip has been
+  /// checked. The picker is a platform round-trip and the decode probe adds
+  /// more, so without this a second tap would open a second picker and two
+  /// clips would race for [CaptureSession.videoPath].
+  bool _isPicking = false;
+
   /// True when Demo Camera Mode is active.
   bool get _isDemoMode => DemoCameraConfig.enabled;
 
@@ -63,7 +70,19 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
       // Ask before touching the camera. Declaring CAMERA in the
       // manifest does not grant it on Android 6+, and without this
       // the preview never appears and nothing reports why.
-      final allowed = await CameraPermissionService.ensure(forVideo: true);
+      // forVideo: false, deliberately.
+      //
+      // Every controller on this screen sets enableAudio: false, and the
+      // CameraX plugin only requests RECORD_AUDIO when audio is actually
+      // enabled - so asking for the microphone bought nothing and could only
+      // fail. Declining it set _isCameraReady = false and rendered a bare
+      // black screen with an infinite spinner: no message, no retry, and
+      // there is no openAppSettings anywhere in this app to escape it.
+      //
+      // It was unreachable while demo mode was a compile-time constant,
+      // because the demo branch returns before this line. Now that the mode
+      // is switchable at runtime, it is one toggle away.
+      final allowed = await CameraPermissionService.ensure(forVideo: false);
       if (!allowed) {
         if (mounted) {
           setState(() {
@@ -503,6 +522,169 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
   }
 
   // ============================================================
+  // PICK AN EXISTING CLIP FROM THE GALLERY
+  // ============================================================
+
+  /// Third route to a walking video, beside the camera and the demo asset.
+  ///
+  /// It is offered in both modes because it is the only one that survives the
+  /// two situations this app keeps meeting: an emulator with no camera, and a
+  /// phone whose camera permission was declined. Everything after the file is
+  /// chosen is the recorded clip's path exactly - same [_discardPreviousVideo],
+  /// same [CaptureSession.videoPath], same [_showRecordingComplete] - so a
+  /// picked clip and a shot one are indistinguishable downstream.
+  Future<void> _pickVideoFromGallery() async {
+    if (_isPicking || _recording || _isStopping || _isSaving) {
+      return;
+    }
+
+    setState(() {
+      _isPicking = true;
+    });
+
+    try {
+      final pickedPath = await MediaPicker.pickVideo();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (pickedPath == null) {
+        // Backing out returns null, and so does a picker that failed - the
+        // service swallows the error and logs it. Silence is the right
+        // response to both: a cancelled pick that scolded the user would be
+        // worse than a rare failure that says nothing, and the Gallery button
+        // is still sitting there to try again.
+        setState(() {
+          _isPicking = false;
+        });
+        return;
+      }
+
+      // Prove the clip decodes BEFORE it becomes the session's video. The
+      // confirmation step and the review screens play it back, and this screen
+      // has already been bitten once by a video that never initialized: the
+      // player sat on a black frame under an endless spinner with nothing to
+      // tap. Failing here instead costs a second and leaves the screen usable.
+      final playable = await _isPlayableVideo(pickedPath);
+
+      if (!mounted) {
+        return;
+      }
+
+      if (!playable) {
+        await _deleteTempFile(pickedPath);
+
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _isPicking = false;
+        });
+
+        _showPickerMessage(
+          'That file could not be played. Choose a video recorded by a phone '
+          'camera (.mp4) rather than a GIF or an animated image.',
+        );
+        return;
+      }
+
+      _timer?.cancel();
+      _timer = null;
+
+      await _discardPreviousVideo();
+
+      widget.session.videoPath = pickedPath;
+
+      if (kDebugMode) {
+        print('Gallery video selected: $pickedPath');
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      // Land in the state a finished recording lands in, so RE-RECORD and
+      // CONTINUE behave the same for a picked clip as for a shot one.
+      setState(() {
+        _isPicking = false;
+        _recording = false;
+        _isStopping = false;
+        _seconds = DemoCameraConfig.videoDurationSeconds;
+      });
+
+      _showRecordingComplete();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error picking video from gallery: $e');
+      }
+
+      if (mounted) {
+        setState(() {
+          _isPicking = false;
+        });
+
+        _showPickerMessage(
+          'Could not open that video. Try another clip, or record one instead.',
+        );
+      }
+    }
+  }
+
+  /// Opens the file in a throwaway player to find out whether this device can
+  /// decode it. A gallery holds files this app never chose the codec for.
+  Future<bool> _isPlayableVideo(String path) async {
+    final probe = VideoPlayerController.file(File(path));
+
+    try {
+      // A codec the device cannot handle can hang rather than throw, which is
+      // the exact way this screen previously ended up spinning forever.
+      await probe.initialize().timeout(const Duration(seconds: 10));
+
+      return probe.value.isInitialized && probe.value.duration > Duration.zero;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Picked video failed to decode: $e');
+      }
+
+      return false;
+    } finally {
+      try {
+        await probe.dispose();
+      } catch (_) {
+        // Best-effort cleanup of the probe controller.
+      }
+    }
+  }
+
+  /// Removes the copy MediaPicker made in the cache when we reject the clip,
+  /// so a few rejected picks do not quietly fill the phone.
+  Future<void> _deleteTempFile(String path) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // A leftover temp file is not worth interrupting the user over.
+    }
+  }
+
+  /// A SnackBar rather than [_showError]'s dialog: a rejected pick is a
+  /// "try another file" nudge, not a dead end, and the Gallery and record
+  /// controls stay reachable underneath it.
+  void _showPickerMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 5)),
+    );
+  }
+
+  // ============================================================
   // SHOW RECORDING COMPLETE
   // ============================================================
 
@@ -696,10 +878,7 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
   @override
   Widget build(BuildContext context) {
     if (!_isCameraReady) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return _buildCameraUnavailableScaffold();
     }
 
     // DEMO MODE: the walking cow video is the "camera feed".
@@ -708,10 +887,7 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
     }
 
     if (_controller == null || !_controller!.value.isInitialized) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return _buildCameraUnavailableScaffold();
     }
 
     return Scaffold(
@@ -795,7 +971,14 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
               left: 0,
               right: 0,
               child: GestureDetector(
-                onTap: _startRecording,
+                // Ignore the record button while a pick is in flight. The
+                // picker has already closed by the time the decode probe runs,
+                // so this button is live and tappable for up to ten seconds
+                // while _pickVideoFromGallery is still deciding - and a
+                // recording started in that window would race the picked clip
+                // for session.videoPath and win, after the user had been shown
+                // "Recording Complete" for the file they chose.
+                onTap: _isPicking ? null : _startRecording,
                 child: Column(
                   children: [
                     Container(
@@ -827,6 +1010,21 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
                 ),
               ),
             ),
+
+          // ======================================================
+          // GALLERY BUTTON
+          // ======================================================
+          // Sits beside the shutter rather than behind a menu: at a judging
+          // table the phone is often handed over with the animal already
+          // filmed. Hidden mid-recording so nothing competes with the
+          // countdown.
+          //
+          // Same offsets as steps 2 and 3, and high enough to clear the record
+          // column - the 72px circle plus its label reaches ~134 up from the
+          // bottom, so a right-aligned labelled button any lower clips the
+          // circle on a 360dp-wide phone.
+          if (!_recording)
+            Positioned(bottom: 150, right: 20, child: _buildGalleryButton()),
 
           // ======================================================
           // SAVING OVERLAY
@@ -941,7 +1139,14 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
               left: 0,
               right: 0,
               child: GestureDetector(
-                onTap: _startRecording,
+                // Ignore the record button while a pick is in flight. The
+                // picker has already closed by the time the decode probe runs,
+                // so this button is live and tappable for up to ten seconds
+                // while _pickVideoFromGallery is still deciding - and a
+                // recording started in that window would race the picked clip
+                // for session.videoPath and win, after the user had been shown
+                // "Recording Complete" for the file they chose.
+                onTap: _isPicking ? null : _startRecording,
                 child: Column(
                   children: [
                     Container(
@@ -973,6 +1178,21 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
                 ),
               ),
             ),
+
+          // ======================================================
+          // GALLERY BUTTON
+          // ======================================================
+          // Sits beside the shutter rather than behind a menu: at a judging
+          // table the phone is often handed over with the animal already
+          // filmed. Hidden mid-recording so nothing competes with the
+          // countdown.
+          //
+          // Same offsets as steps 2 and 3, and high enough to clear the record
+          // column - the 72px circle plus its label reaches ~134 up from the
+          // bottom, so a right-aligned labelled button any lower clips the
+          // circle on a 360dp-wide phone.
+          if (!_recording)
+            Positioned(bottom: 150, right: 20, child: _buildGalleryButton()),
 
           // ======================================================
           // SAVING OVERLAY
@@ -1020,5 +1240,92 @@ class _VideoCaptureScreenState extends State<VideoCaptureScreen> {
     }
 
     return const ColoredBox(color: Colors.black);
+  }
+
+  // ============================================================
+  // GALLERY BUTTON
+  // ============================================================
+
+  Widget _buildGalleryButton() {
+    // Disabled rather than hidden while a pick is in flight, so the label can
+    // say the picker is on its way instead of the button appearing to have
+    // done nothing.
+    final busy = _isPicking || _isSaving;
+
+    return ElevatedButton.icon(
+      onPressed: busy ? null : _pickVideoFromGallery,
+      icon: _isPicking
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Icon(Icons.video_library, size: 20),
+      label: Text(_isPicking ? 'Opening...' : 'Gallery'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.black.withValues(alpha: 0.6),
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: Colors.black.withValues(alpha: 0.6),
+        disabledForegroundColor: Colors.white70,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+    );
+  }
+
+  // ============================================================
+  // CAMERA NOT AVAILABLE (yet, or at all)
+  // ============================================================
+
+  /// Shown while the camera is starting - and left standing when it never
+  /// starts, which is what a declined permission or an emulator produces.
+  ///
+  /// The bare spinner this replaces was the dead end described up in
+  /// [_initializeCamera]: no message, no retry, no way back. The camera logic
+  /// is untouched; this only makes sure the one route that still works from
+  /// here, the gallery, is on screen and reachable.
+  Widget _buildCameraUnavailableScaffold() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text('Step 4: Walking Video'),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Colors.white),
+
+              const SizedBox(height: 24),
+
+              const Text(
+                'Preparing the camera...',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+
+              const SizedBox(height: 12),
+
+              const Text(
+                'If the camera is unavailable on this device, or permission '
+                'was declined, choose an existing walking video instead.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+
+              const SizedBox(height: 24),
+
+              _buildGalleryButton(),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/capture_session.dart';
 import '../../services/camera_permission_service.dart';
+import '../../services/capture_source_service.dart';
 import '../../services/demo_camera_config.dart';
 import '../../services/demo_media_service.dart';
 import 'side_photo_screen.dart';
@@ -20,6 +21,10 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   bool _isInitializing = true;
   bool _isCapturing = false;
 
+  /// Tracked separately from [_isCapturing] so the shutter button does not
+  /// read "Capturing..." while the user is still browsing the gallery.
+  bool _isPickingFromGallery = false;
+
   bool _isCaptured = false;
   CameraController? _controller;
   String? _capturedTagImagePath;
@@ -29,6 +34,10 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   String? _demoPreviewAsset;
 
   final TextEditingController _tagController = TextEditingController();
+
+  /// One in-flight image request at a time. Both buttons read this, so a
+  /// second tap - on either of them - cannot start a competing capture.
+  bool get _isBusy => _isCapturing || _isPickingFromGallery;
 
   @override
   void initState() {
@@ -92,7 +101,7 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
 
       final controller = CameraController(
         camera,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
       );
 
@@ -200,6 +209,81 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
         });
 
         _showCameraError('Unable to capture the ear tag image.');
+      }
+    }
+  }
+
+  // ------------------------------------------------------------
+  // PICK EAR TAG IMAGE FROM GALLERY
+  // ------------------------------------------------------------
+
+  /// Third route to an ear-tag photograph, beside demo media and the real
+  /// shutter. It is offered in BOTH modes because it is the only one that
+  /// survives an emulator with no camera and a phone whose camera permission
+  /// was declined - and because a judge may simply hand over a phone that
+  /// already has a photograph of the animal on it.
+  ///
+  /// It deliberately ends in the same state as a capture - same path variable,
+  /// same _isCaptured flag - so the "Check the ear tag image" / Retake /
+  /// Confirm step, and everything downstream that derives centimetres from the
+  /// tag, cannot tell a picked photograph from a shot one.
+  Future<void> _pickTagImageFromGallery() async {
+    if (_isBusy || _isCaptured) {
+      return;
+    }
+
+    setState(() {
+      _isPickingFromGallery = true;
+    });
+
+    try {
+      // MediaPicker copies the chosen file into this app's cache, so the path
+      // it returns is ours to keep - and safe for _retakeImage to delete
+      // without touching the original in the user's gallery.
+      final path = await MediaPicker.pickImage();
+
+      if (!mounted) return;
+
+      if (path == null) {
+        // Backed out of the picker, or the pick failed and was swallowed.
+        // Either way nothing was chosen, so nothing here changes.
+        setState(() {
+          _isPickingFromGallery = false;
+        });
+        return;
+      }
+
+      // A zero-byte copy means the source could not be read - a cloud-only
+      // photo that never downloaded, most often. Better caught now than as a
+      // blank tag at the measurement step.
+      final file = File(path);
+      if (!await file.exists() || await file.length() == 0) {
+        if (!mounted) return;
+
+        setState(() {
+          _isPickingFromGallery = false;
+        });
+
+        _showPickerError(
+          'That photo could not be read. Try another, or download it to the device first.',
+        );
+        return;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _capturedTagImagePath = path;
+        _isCaptured = true;
+        _isPickingFromGallery = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isPickingFromGallery = false;
+        });
+
+        _showPickerError('Unable to open the gallery. You can capture the ear tag instead.');
       }
     }
   }
@@ -348,6 +432,15 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   // ------------------------------------------------------------
 
   Widget _buildPreview() {
+    // Checked ahead of _cameraError: a gallery pick works even when the camera
+    // never initialized, and on that phone the error text would otherwise sit
+    // over the picked photo and hide the image the user is being asked to
+    // check before confirming. A capture cannot reach here with an error set,
+    // so the camera path is unaffected.
+    if (_isCaptured) {
+      return _buildCapturedImagePreview();
+    }
+
     if (_cameraError != null) {
       return Center(
         child: Padding(
@@ -359,10 +452,6 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
           ),
         ),
       );
-    }
-
-    if (_isCaptured) {
-      return _buildCapturedImagePreview();
     }
 
     // DEMO MODE: realistic cow image behind the existing ear-tag guide.
@@ -522,14 +611,41 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   // ------------------------------------------------------------
 
   Widget _buildCaptureButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 55,
-      child: ElevatedButton.icon(
-        onPressed: _isCapturing ? null : _captureTagImage,
-        icon: const Icon(Icons.camera_alt),
-        label: Text(_isCapturing ? 'Capturing...' : 'Capture Ear Tag'),
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 55,
+          child: ElevatedButton.icon(
+            onPressed: _isBusy ? null : _captureTagImage,
+            icon: const Icon(Icons.camera_alt),
+            label: Text(_isCapturing ? 'Capturing...' : 'Capture Ear Tag'),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Full width under the shutter rather than squeezed alongside it: at
+        // half width the labels wrap, and this button is the fallback that has
+        // to stay readable on the phone where the camera one did not work.
+        SizedBox(
+          width: double.infinity,
+          height: 55,
+          child: OutlinedButton.icon(
+            onPressed: _isBusy ? null : _pickTagImageFromGallery,
+            // Same icon and wording as steps 2, 3 and 4. The button is shaped
+            // differently here because this screen has a real button bar
+            // rather than a photograph to float over, but it must still read
+            // as the same action four times in one session.
+            icon: const Icon(Icons.photo_library),
+            label: Text(_isPickingFromGallery ? 'Opening...' : 'Gallery'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 55),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -550,6 +666,15 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
     }
 
     return 'Unable to use the camera. Please check permissions and try again.';
+  }
+
+  /// A failed pick is not a camera fault and must not look like one: it leaves
+  /// the screen usable with both routes still open, so a SnackBar rather than
+  /// the blocking dialog [_showCameraError] puts up.
+  void _showPickerError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   void _showCameraError(String message) {
