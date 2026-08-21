@@ -153,10 +153,22 @@ Both work, in both modes, on every capture screen:
 - **Upload a photo** — the **Gallery** button, next to the shutter. Works in
   demo mode too. This is the one that always works, so prefer it under pressure.
 
-To get photos onto the emulator, drag and drop the file onto the emulator
-window, or:
+### The media pack
 
-    adb push D:\sih25005-demo-photos\1-side.jpg /sdcard/Pictures/
+`C:\Users\atuld\Downloads\pashu-demo-media\` — **already loaded on the
+emulator**, and your backup if you need to put them on a phone.
+
+| file | step |
+|---|---|
+| `1-ear-tag-closeup.jpg` | tag — then type `356279812346` |
+| `2-side-view.jpg` | side |
+| `3-rear-view.jpg` | rear |
+| `4-walking-video.mp4` | the 8-second clip |
+| `5-not-a-cow.jpg` | **a chair** — the honesty test in section 4 |
+
+To add more, drag the file onto the emulator window, or:
+
+    adb push <file> /sdcard/Pictures/
 
 ---
 
@@ -201,6 +213,7 @@ window, or:
 | Chat takes forever | The model was paged out. Ask one question and wait; the second is fast. |
 | Scorecard shows red DEMONSTRATION DATA | The tag close-up did not reach the server, or nothing measured. Retake with the tag filling the frame. |
 | Emulator camera is black | Demo camera mode OFF requires a working webcam. Switch back to demo, or use **Gallery**. |
+| **Emulator window half off screen** | Run `scriptsix-emulator-window.ps1` (also in Downloads). It remembers a position above the top of the display and opens taller than the work area, so it needs moving *and* resizing. |
 | Everything is broken | Close the server window and re-run `stage_ready.bat`. It is safe to re-run at any time. |
 
 ---
