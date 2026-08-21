@@ -75,3 +75,8 @@ app.*.map.json
 # VS Code which you may wish to be included in version control, so this line
 # is commented out by default.
 #.vscode/
+
+# Gradle build output for the Android module (the root /build/ rule above
+# does not cover it - this one is nested under android/).
+android/build/
+android/.gradle/

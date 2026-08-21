@@ -2,12 +2,11 @@
 
 For Person 1. This is the whole change; nothing else in the app needs touching.
 
-There is no Flutter or Dart toolchain on the integration machine, so none of
-the Dart below has been compiled. It is written out rather than committed for
-exactly that reason — untested code in a working app is worse than no code.
-The same panel has been built and tested on the web console
-(`server/static/demo.html`, `server/test_demo_ui.js`, 22 checks) so the
-behaviour it should have is pinned down and can be copied from there.
+Flutter 3.47.1 is now installed at `D:lutter` and the app builds, so
+anything here can be compiled and checked rather than taken on trust. The same
+breed panel is also built and tested on the web console
+(`server/static/demo.html`, `server/test_demo_ui.js`) if it helps to copy the
+wording.
 
 ---
 
@@ -105,12 +104,23 @@ From the tested web panel, if it helps to reuse:
 
 ## 5. The one change that would matter most: send the tag close-up
 
-`ScanTagScreen` already captures the ear tag, but the app uploads only the tag
-NUMBER. If it also uploaded the photograph, the server now accepts it:
+**`ScanTagScreen` already takes the photograph.** It is held in
+`_capturedTagImagePath` and then dropped, because `CaptureSession` has no field
+for it — so this is three small changes, not a new capture flow:
 
 ```dart
-request.files.add(
-  await http.MultipartFile.fromPath('tag_photo', tagPhotoPath));
+// lib/models/capture_session.dart
+String? tagPhotoPath;                       // + the constructor parameter
+
+// lib/screens/capture/scan_tag_screen.dart, _goToNextStep
+final session = CaptureSession(tagId: animalId,
+                               tagPhotoPath: _capturedTagImagePath);
+
+// lib/services/api_service.dart, uploadSession
+if (tagPhotoPath != null && tagPhotoPath.isNotEmpty) {
+  request.files.add(
+    await http.MultipartFile.fromPath('tag_photo', tagPhotoPath));
+}
 ```
 
 `tag_photo` or `tag_image`, either name, optional, same 10 MB cap as the other

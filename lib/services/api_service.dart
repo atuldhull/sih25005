@@ -108,6 +108,16 @@ class ApiService {
         await http.MultipartFile.fromPath('rear_photo', rearPhotoPath),
       );
       request.files.add(await http.MultipartFile.fromPath('video', videoPath));
+
+      // Optional, and deliberately not part of the required-path check above:
+      // a session without a tag close-up still uploads and still scores its
+      // angle traits. The server accepts either 'tag_photo' or 'tag_image'.
+      final tagPhotoPath = session.tagPhotoPath;
+      if (tagPhotoPath != null && tagPhotoPath.isNotEmpty) {
+        request.files.add(
+          await http.MultipartFile.fromPath('tag_photo', tagPhotoPath),
+        );
+      }
     } catch (e) {
       debugPrint('ApiService.uploadSession: failed to attach media: $e');
       return null;

@@ -277,7 +277,14 @@ class _ScanTagScreenState extends State<ScanTagScreen> {
   // ------------------------------------------------------------
 
   void _goToNextStep(String animalId) {
-    final session = CaptureSession(tagId: animalId);
+    // _capturedTagImagePath was already being taken here and then dropped,
+    // because CaptureSession had nowhere to put it. It is the only object of
+    // known size in any of the photographs, so it is what makes a centimetre
+    // scale possible at all.
+    final session = CaptureSession(
+      tagId: animalId,
+      tagPhotoPath: _capturedTagImagePath,
+    );
 
     Navigator.push(
       context,
