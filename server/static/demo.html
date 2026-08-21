@@ -143,13 +143,18 @@
   <div class="panel on" id="p-score">
     <div class="card">
       <h3>Score this animal</h3>
-      <div class="muted" style="margin-bottom:10px">Side photo + rear photo
-        (+ optional 8-s walking video). The server refuses ineligible
-        animals — that's a feature.</div>
+      <div class="muted" style="margin-bottom:10px">Side photo + rear photo,
+        plus an optional close-up of the ear tag and an optional 8-s walking
+        video. The server refuses ineligible animals — that's a feature.<br>
+        <b>The tag close-up is what makes centimetres possible.</b> Without it
+        the angle traits still score and everything measured in centimetres —
+        stature, body length, heart girth and the weight — honestly refuses,
+        because nothing in the frame has a known size.</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <input type="file" id="fSide" accept="image/*">
-        <input type="file" id="fRear" accept="image/*">
-        <input type="file" id="fVid" accept="video/*">
+        <label class="muted">side <input type="file" id="fSide" accept="image/*"></label>
+        <label class="muted">rear <input type="file" id="fRear" accept="image/*"></label>
+        <label class="muted">tag close-up <input type="file" id="fTag" accept="image/*"></label>
+        <label class="muted">walking video <input type="file" id="fVid" accept="video/*"></label>
         <button class="go" id="goScore">Score animal</button>
       </div>
       <div class="sys" id="scoreMsg" hidden></div>
@@ -189,7 +194,7 @@
   // one upload attempt = one id; a RETRY of the same files reuses it so
   // the server's idempotency (same device_session_id) actually engages
   let attemptId = null;
-  ["fSide", "fRear", "fVid"].forEach(id =>
+  ["fSide", "fRear", "fTag", "fVid"].forEach(id =>
     $(id).addEventListener("change", () => { attemptId = null; }));
 
   function el(tag, cls, text) {
@@ -544,6 +549,8 @@
     fd.append("device_session_id", attemptId);
     fd.append("side_photo", side);
     fd.append("rear_photo", rear);
+    const tag = $("fTag").files[0];
+    if (tag) fd.append("tag_photo", tag);
     if (vid) fd.append("gait_video", vid);
     $("goScore").disabled = true;
     msg.hidden = false; msg.textContent = "Scoring…";
