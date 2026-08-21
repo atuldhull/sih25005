@@ -124,7 +124,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
                   Text(
                     'History shows past scoring sessions and the weight '
                     'trend. Offline, the last cached history for an animal '
-                    'is shown. Scorecards will arrive in a later step.',
+                    'is shown. Tap a past session to open its scorecard.',
                     style: TextStyle(fontSize: 13),
                   ),
                 ],

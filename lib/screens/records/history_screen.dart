@@ -342,6 +342,10 @@ class _WeightChartCard extends StatelessWidget {
 
   const _WeightChartCard({required this.entries});
 
+  /// The subset that was actually measured, in the order given.
+  List<_HistoryEntry> get measured =>
+      entries.where((e) => e.plottableWeight != null).toList();
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -367,18 +371,47 @@ class _WeightChartCard extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 16),
-            if (entries.isEmpty)
+
+            // ONLY MEASURED SESSIONS ARE PLOTTED.
+            //
+            // The baseline engine invents a weight per animal from a fixed
+            // seed, so those figures are stable and rise and fall like real
+            // ones. Plotted, three of them became a confident upward trend
+            // for an animal nothing had ever weighed - while the assistant,
+            // reading the same sessions, correctly refused to give a weight
+            // at all. A line going up is more persuasive than a paragraph
+            // saying there is no measurement, so the line has to go.
+            if (measured.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
                   child: Text(
-                    'No weight data available.',
+                    entries.isEmpty
+                        ? 'No weight data available.'
+                        : 'No measured weights yet. The sessions on record '
+                              'ran on the demonstration engine, so there is '
+                              'nothing real to plot.',
+                    textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
                 ),
               )
-            else
-              SizedBox(height: 220, child: _buildChart(entries)),
+            else ...[
+              SizedBox(height: 220, child: _buildChart(measured)),
+              if (measured.length < entries.length) ...[
+                const SizedBox(height: 10),
+                Text(
+                  '${entries.length - measured.length} of ${entries.length} '
+                  'sessions are not plotted: they ran on the demonstration '
+                  'engine and produced no real measurement.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ],
           ],
         ),
       ),
@@ -503,6 +536,7 @@ class _HistoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final measured = entry.measured;
     final weightText = entry.weightKg == null
         ? '—'
         : '${entry.weightKg!.toStringAsFixed(1)} kg';
@@ -522,20 +556,34 @@ class _HistoryRow extends StatelessWidget {
           dateText,
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
         ),
-        subtitle: const Text('Scoring session'),
+        subtitle: Text(
+          measured ? 'Scoring session' : 'Scoring session - not measured',
+          style: measured
+              ? null
+              : const TextStyle(color: Color(0xFFE65100)),
+        ),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              weightText,
+              measured ? weightText : 'placeholder',
               style: TextStyle(
-                fontSize: 15,
+                fontSize: measured ? 15 : 13,
                 fontWeight: FontWeight.w600,
-                color: Colors.green.shade700,
+                // Green reads as a healthy measured figure. A number that
+                // was never measured must not be dressed as one.
+                color: measured
+                    ? Colors.green.shade700
+                    : const Color(0xFFE65100),
               ),
             ),
-            const Text('weight'),
+            Text(
+              measured ? 'weight' : 'not a measurement',
+              style: measured
+                  ? null
+                  : TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
           ],
         ),
         onTap: () => _openScorecard(context),
@@ -675,6 +723,16 @@ class _HistoryEntry {
   final String? date;
   final double? weightKg;
   final Map<String, dynamic> raw;
+
+  /// Whether this session's figures were measured from photographs.
+  ///
+  /// Absent means NOT measured. An older server build does not send the
+  /// field at all, and defaulting an unknown to "measured" is exactly the
+  /// mistake this exists to prevent.
+  bool get measured => raw['measured'] == true;
+
+  /// A weight worth plotting: present, and actually measured.
+  double? get plottableWeight => measured ? weightKg : null;
 
   _HistoryEntry({this.date, this.weightKg, required this.raw});
 

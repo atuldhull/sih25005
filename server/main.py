@@ -682,5 +682,20 @@ def get_history(animal_id: str):
             "date": s["date"],
             "weight_kg_mid": s.get("weight_kg_mid"),
             "health_flags": s.get("health_flags", []),
+            # WITHOUT THIS THE HISTORY SCREEN DRAWS INVENTED WEIGHTS AS A TREND.
+            #
+            # The scorecard, the chat, the reports and the alert feed all
+            # disclose the baseline engine. This endpoint did not send the
+            # field at all, so the one screen that plots weight over time had
+            # no way to know, and rendered three placeholder figures - 392,
+            # 405, 418 kg from random.Random(animal_id) - as a confident
+            # rising line with a green figure beside each row.
+            #
+            # Measured on animal 356279812345: the assistant refuses that same
+            # weight outright ("did not produce a real weight measurement")
+            # while History shows it climbing. Same animal, same app, opposite
+            # claims - and the trend is the more persuasive of the two,
+            # because a line going up looks like evidence.
+            "measured": str(s.get("result", {}).get("engine", "")).startswith("ml"),
         })
     return {"animal_id": animal_id, "sessions": sessions}
