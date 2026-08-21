@@ -328,6 +328,10 @@ const alertsSource = (() => {
 
 check(/a\.demonstration/.test(alertsSource),
   "the alert feed checks which engine produced the findings");
+check(/a\.demonstration\s*!==\s*false/.test(alertsSource),
+  "an alert with NO provenance field warns too - every alert stored before "
+  + "that field existed carries none, including a notifiable-disease "
+  + "escalation, and a truthy test left those looking like real findings");
 check(/DEMONSTRATION ALERT/.test(alertsSource),
   "and says so on the card itself");
 check(/Do not act on it/i.test(alertsSource),

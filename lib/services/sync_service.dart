@@ -104,6 +104,11 @@ class SyncService {
       sidePhotoPath: row['side_photo_path'] as String?,
       rearPhotoPath: row['rear_photo_path'] as String?,
       videoPath: row['video_path'] as String?,
+      // Without this the queued retry uploads without the ear-tag close-up,
+      // so a session that went offline scores strictly worse than the same
+      // session uploaded immediately - every centimetre trait refused for
+      // want of a scale.
+      tagPhotoPath: row['tag_photo_path'] as String?,
     );
 
     final result = await _apiService.uploadSession(session);

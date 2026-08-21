@@ -647,7 +647,13 @@
         // real escalations about animals nothing examined. The alert is still
         // shown - the escalation path is a feature that has to be
         // demonstrable - but a vet officer must not act on a placeholder.
-        if (a.demonstration) {
+        // ABSENT counts as demonstration, not as verified. Alerts stored
+        // before this field existed - which is every seeded demo-story alert,
+        // including a Lumpy Skin Disease escalation - carry no provenance at
+        // all, and `if (a.demonstration)` left them looking like real
+        // findings. Unknown provenance warns; that is the same rule the
+        // scorecard applies to a missing `engine`.
+        if (a.demonstration !== false) {
           c.appendChild(el("div", "risk high",
             "DEMONSTRATION ALERT - the findings behind this were produced " +
             "by the baseline engine, not measured from the photographs. " +

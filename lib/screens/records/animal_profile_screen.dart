@@ -221,6 +221,10 @@ class _ProfileCard extends StatelessWidget {
             _FieldRow(
               label: 'Lactation number',
               value:
+                  // lactation_no is what GET /animal/{id} actually sends;
+                  // without it this row read "-" on every animal, which is
+                  // the number the eligibility rule is built on.
+                  _stringValue(profile['lactation_no']) ??
                   _stringValue(profile['lactation_number']) ??
                   _stringValue(profile['lactation']),
             ),

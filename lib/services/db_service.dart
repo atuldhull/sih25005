@@ -15,7 +15,7 @@ class DbService {
 
     _database = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE sessions (
@@ -24,6 +24,7 @@ class DbService {
             side_photo_path TEXT,
             rear_photo_path TEXT,
             video_path TEXT,
+            tag_photo_path TEXT,
             result_json TEXT,
             status TEXT,
             captured_at TEXT
@@ -48,6 +49,17 @@ class DbService {
             )
           ''');
         }
+        if (oldVersion < 3) {
+          // The ear-tag close-up had nowhere to live, so a session that went
+          // through the offline queue lost it - and that photo is the only
+          // object of known size in the capture, so losing it costs every
+          // centimetre trait, heart girth and the weight. An install that
+          // already has a v2 database needs the column added rather than
+          // recreated, or its queued sessions would be destroyed.
+          await db.execute(
+            'ALTER TABLE sessions ADD COLUMN tag_photo_path TEXT',
+          );
+        }
       },
     );
 
@@ -65,6 +77,7 @@ class DbService {
       'side_photo_path': session.sidePhotoPath,
       'rear_photo_path': session.rearPhotoPath,
       'video_path': session.videoPath,
+      'tag_photo_path': session.tagPhotoPath,
       'result_json': null,
       'status': 'pending',
       'captured_at': DateTime.now().toIso8601String(),
