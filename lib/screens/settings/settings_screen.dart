@@ -21,6 +21,17 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final ApiService _api = ApiService();
 
+  /// Owned by the screen, not by the dialog.
+  ///
+  /// It was created inside _editServerUrl and disposed on the line after
+  /// `await showDialog(...)`. That await completes when the dialog is POPPED,
+  /// while its exit animation is still running and the TextField is still
+  /// mounted and still listening - so disposing there tripped
+  /// 'package:flutter/src/widgets/framework.dart': Failed assertion:
+  /// '_dependents.isEmpty': is not true, and took the whole app to a red
+  /// screen. Reproduced on the emulator by saving a server address.
+  final TextEditingController _urlController = TextEditingController();
+
   String? _pingResult;
   bool _pingOk = false;
   bool _pinging = false;
@@ -35,6 +46,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    _urlController.dispose();
     _api.close();
     super.dispose();
   }
@@ -91,9 +103,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _editServerUrl() async {
-    final controller = TextEditingController(
-      text: SettingsService.serverUrl.value,
-    );
+    _urlController.text = SettingsService.serverUrl.value;
+    final controller = _urlController;
     String? error;
 
     final saved = await showDialog<bool>(
@@ -157,7 +168,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
 
-    controller.dispose();
     if (saved == true && mounted) {
       setState(() {});
       await _testConnection();

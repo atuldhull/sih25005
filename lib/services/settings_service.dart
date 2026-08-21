@@ -54,6 +54,19 @@ class SettingsService {
       return 'Use a full address, e.g. http://192.168.1.7:8000';
     }
 
+    // Uri.tryParse accepts a port of any length and only throws when .port is
+    // read, so "http://10.0.2.2:9999999" was saved happily and surfaced much
+    // later as "Invalid argument(s): Invalid port 9999999" in the connection
+    // row. A typo belongs under the field that caused it.
+    try {
+      final port = parsed.hasPort ? parsed.port : null;
+      if (port != null && (port < 1 || port > 65535)) {
+        return 'Port must be between 1 and 65535.';
+      }
+    } catch (_) {
+      return 'That port number is not valid.';
+    }
+
     try {
       await DbService.setSetting(_serverUrlKey, url);
     } catch (e) {

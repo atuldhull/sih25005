@@ -155,6 +155,21 @@ class SyncService {
   /// nothing stored. The session is left pending either way - never deleted,
   /// and never marked synced on a failure.
   Future<Map<String, dynamic>?> uploadSessionNow(String localId) async {
+    // Refresh at both ends, not just on success.
+    //
+    // This used to call refreshPending() only after markSynced, so a capture
+    // that FAILED to upload never moved the counter - and a failed upload is
+    // precisely when something is waiting to be sent. Reproduced on the
+    // emulator: with the server unreachable, the saved screen correctly said
+    // "Saved on this phone. Not sent yet.", the database correctly held one
+    // pending row, and Settings said "Nothing waiting" with Send now greyed
+    // out. The one control that could have flushed the queue by hand was the
+    // one the bug disabled.
+    //
+    // The leading refresh also makes the count include the row that was just
+    // inserted, so the badge appears the moment a capture is saved rather
+    // than after the upload attempt finishes.
+    await refreshPending();
     try {
       final row = await DbService.getSessionById(localId);
       if (row == null) return null;
@@ -179,11 +194,12 @@ class SyncService {
       if (result == null) return null;
 
       await DbService.markSynced(localId, jsonEncode(result));
-      await refreshPending();
       return result;
     } catch (e) {
       debugPrint('SyncService.uploadSessionNow failed: $e');
       return null;
+    } finally {
+      await refreshPending();
     }
   }
 
