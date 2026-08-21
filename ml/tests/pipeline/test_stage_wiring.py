@@ -69,13 +69,33 @@ def test_breed_verified_is_never_fabricated():
     assert r.get("breed_verified") is None
 
 
-def test_unscored_result_is_blocked_by_the_adoption_gate():
-    """A shape-valid but fully unscored result must NOT replace the baseline."""
+def test_an_unscored_result_is_still_a_valid_result():
+    """A shape-valid but fully unscored result must PASS validation.
+
+    This used to assert the opposite - that such a result was blocked, so it
+    could not displace the baseline engine. But scoring_loader answers a
+    rejected result by calling the baseline engine, which invents all twenty
+    scores, so the block did not suppress the refusal: it replaced it with a
+    fabrication. A photograph of a chair came back with twenty confident
+    scores and a weight near 350 kg.
+
+    Refusing is an answer, and it has to survive the trip.
+    """
     import sys, pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "contract"))
     from validate_result import validate
     r = score_animal("no_such_side.jpg", "no_such_rear.jpg", None, RECORD)
     problems = validate(r, mode="pipeline")
-    assert any("adoption gate" in p for p in problems), (
-        "an all-null result passed validation - it would silently replace a "
-        "working baseline engine the moment ml.pipeline became importable")
+    assert problems == [], (
+        "a refusal failed validation, so the caller will substitute invented "
+        f"scores for it. Problems: {problems}")
+
+
+def test_every_refused_trait_carries_its_reason():
+    """The refusal is only useful if it says why. Without this the app shows
+    twenty blank rows, which reads as a broken screen rather than an answer."""
+    r = score_animal("no_such_side.jpg", "no_such_rear.jpg", None, RECORD)
+    unscored = [t for t in r["traits"] if t.get("score") is None]
+    assert unscored, "expected a fully unscored result from missing files"
+    missing = [t["name"] for t in unscored if not t.get("not_scored_reason")]
+    assert not missing, f"refused with no reason given: {missing}"

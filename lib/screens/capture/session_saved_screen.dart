@@ -133,10 +133,22 @@ class _SessionSavedScreenState extends State<SessionSavedScreen> {
         );
       case _Stage.scored:
         final demo = _result?.isDemonstration ?? true;
-        return Icon(
-          demo ? Icons.warning_amber_rounded : Icons.verified_outlined,
+        // A tick over an honest refusal would read as success. Nothing
+        // measured is not a failure and not an achievement - it is a result.
+        final measuredNothing = (_result?.scoredCount ?? 0) == 0;
+        if (demo || measuredNothing) {
+          return Icon(
+            demo
+                ? Icons.warning_amber_rounded
+                : Icons.do_not_disturb_on_outlined,
+            size: 90,
+            color: const Color(0xFFEF6C00),
+          );
+        }
+        return const Icon(
+          Icons.verified_outlined,
           size: 90,
-          color: demo ? const Color(0xFFEF6C00) : const Color(0xFF2E7D32),
+          color: Color(0xFF2E7D32),
         );
       case _Stage.failed:
         return const Icon(Icons.cloud_off, size: 90, color: Colors.grey);
@@ -191,6 +203,28 @@ class _SessionSavedScreenState extends State<SessionSavedScreen> {
               Text(
                 'Nothing could be measured from these photographs, so the '
                 'server answered with placeholders. Do not act on them.',
+                style: TextStyle(fontSize: 13.5, color: Colors.grey.shade700),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          );
+        }
+        if (result.scoredCount == 0) {
+          return Column(
+            children: [
+              const Text(
+                'Nothing could be measured',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFE65100),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Every trait was refused. Open the scorecard to see why — most '
+                'often the ear tag was not photographed close up.',
                 style: TextStyle(fontSize: 13.5, color: Colors.grey.shade700),
                 textAlign: TextAlign.center,
               ),

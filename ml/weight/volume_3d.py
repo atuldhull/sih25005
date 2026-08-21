@@ -368,7 +368,26 @@ def estimate(side_mask: np.ndarray,
     lo_kg = m3 * DENSITY_KG_PER_M3[0]
     hi_kg = m3 * DENSITY_KG_PER_M3[1]
 
-    # --- the independent second route ------------------------------------
+    # --- the second route, and what it can and cannot catch ----------------
+    #
+    # This was labelled "the independent second route". It is not independent,
+    # and calling it that overstated how much the pair of numbers agreeing
+    # should reassure anyone.
+    #
+    # Schaeffer here is girth^2 x length / divisor, where girth and length are
+    # both built from the same pixel measurements times the same cm_per_px.
+    # Girth carries the scale squared, length carries it once, so Schaeffer
+    # carries it CUBED - exactly as the volume route does. Measured across a
+    # sweep of scale values on one animal, schaeffer_kg / mid held at 1.4972 at
+    # every single scale: the ratio is a constant, because the scale cancels
+    # out of it entirely.
+    #
+    # So this comparison can catch a shape error - a bad depth profile, a
+    # width/depth ratio from the wrong photograph, a torso span that ran into
+    # the neck. It cannot catch a scale error, and on the one animal measured
+    # so far the scale is the error: an ear-tag ruler off by ~1.3x puts the
+    # weight out by ~2.2x while these two numbers go on agreeing to within
+    # their usual constant.
     heart_idx = int(round(HEART_STATION_FRAC * (len(prof) - 1)))
     heart_depth_px = float(prof[heart_idx]) if prof[heart_idx] > 0 else float(prof.max())
     girth_cm = ellipse_perimeter(heart_depth_px * cm_per_px / 2.0,
@@ -378,8 +397,10 @@ def estimate(side_mask: np.ndarray,
 
     mid = 0.5 * (lo_kg + hi_kg)
     agree = mid > 0 and abs(schaeffer_kg - mid) / mid <= CROSS_CHECK_TOLERANCE
-    cross = (f"girth-length: {schaeffer_kg:.0f} kg"
-             + ("" if agree else " - DISAGREES with the volume estimate"))
+    cross = (f"same-scale shape check, girth-length: {schaeffer_kg:.0f} kg"
+             + ("" if agree else " - DISAGREES with the volume estimate")
+             + ". Both routes use the same centimetre scale, so agreement here"
+               " says the shape is consistent - it cannot confirm the scale.")
 
     if not agree:
         # Do not quietly average two methods that contradict each other. Widen

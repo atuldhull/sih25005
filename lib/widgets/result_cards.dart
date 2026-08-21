@@ -90,6 +90,51 @@ class EngineBanner extends StatelessWidget {
 
     final scored = result.scoredCount;
     final total = result.traits.length;
+
+    // A real pipeline that looked at the photographs and could measure nothing
+    // is telling the truth, but it is not a measurement, and a green MEASURED
+    // banner over twenty refusals would read as success. The server used to
+    // hide this case behind twenty invented scores; now that it reports it
+    // honestly, the app has to render it honestly too.
+    if (scored == 0) {
+      return SectionCard(
+        background: const Color(0xFFFFF3E0),
+        border: const Color(0xFFEF6C00),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.do_not_disturb_on_outlined,
+                color: Color(0xFFE65100)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'NOTHING COULD BE MEASURED',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFFE65100),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'The photographs were examined and every trait was '
+                    'refused. Each row below says why. No scores and no '
+                    'weight are being reported, because none were measured — '
+                    'usually this means the animal was not clearly visible, '
+                    'or the ear tag was not photographed close up.',
+                    style: TextStyle(color: Color(0xFFE65100), height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return SectionCard(
       background: const Color(0xFFE8F5E9),
       border: const Color(0xFF2E7D32),

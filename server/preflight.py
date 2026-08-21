@@ -97,7 +97,7 @@ def main():
 
     # 3. Ollama + models. EXACT tag match - the runtime requests the
     # exact model name and a prefix variant would 404 at runtime
-    chat_model = os.environ.get("SIH_CHAT_MODEL", "qwen2.5:7b")
+    chat_model = os.environ.get("SIH_CHAT_MODEL", "gemma2:9b")
     embed_model = os.environ.get("SIH_EMBED_MODEL", "nomic-embed-text")
     try:
         _, tags = _http_json("http://127.0.0.1:11434/api/tags")

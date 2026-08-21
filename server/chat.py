@@ -34,14 +34,32 @@ from reports import DISCLAIMER
 from rules import check_eligibility
 
 OLLAMA_URL = "http://127.0.0.1:11434"
-CHAT_MODEL = os.environ.get("SIH_CHAT_MODEL", "qwen2.5:7b")
-# connect fast-fails when Ollama is down; read stays demo-friendly
-# (below mobile HTTP defaults) so a slow generation degrades to the
-# instant template instead of an app-side timeout
-OLLAMA_TIMEOUT = httpx.Timeout(20.0, connect=3.0)
+# gemma2:9b, not qwen2.5:7b, and the two changes below have to move together.
+#
+# Measured on the identical prompt: qwen renders Hindi "kilogram" as the
+# truncated "किलोग्र" and mints non-words ("श्राद्ध टॅग", "सेझन"), while gemma2
+# spells "किलोग्राम" in full. In Kannada qwen is worse than wrong - it emits
+# Korean and Chinese glyphs ("젖牸 ವೈಯಾಗ್ಯವು...") carrying a fabricated weight
+# range, and _reply_ok waves it through because the gate only asks whether any
+# Kannada codepoint is present. Token cost also drops from 315-457 to 57.
+CHAT_MODEL = os.environ.get("SIH_CHAT_MODEL", "gemma2:9b")
+
+# connect fast-fails when Ollama is down; read stays under mobile HTTP
+# defaults so a slow generation degrades to the instant template rather than
+# timing out app-side.
+#
+# 20s was too short for Kannada, which needs ~17.4s warm and was silently
+# falling back to the English template. Raising it is only safe BECAUSE of the
+# model swap above: at 20s the timeout was the one thing protecting Kannada
+# speakers from qwen's glyph soup. Never raise this while CHAT_MODEL is a
+# qwen build.
+OLLAMA_TIMEOUT = httpx.Timeout(45.0, connect=3.0)
 
 _DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 _KANNADA = re.compile(r"[ಀ-೿]")
+# Han, Hangul, Hiragana and Katakana. None of these belong in a reply to an
+# Indian farmer, and a local model under language pressure reaches for them.
+_CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
 
 # Emergency = specific distress PHRASES. Latin ones are word-bounded
 # regexes; Devanagari ones are multi-word phrases. Deliberately NOT
@@ -94,8 +112,26 @@ def build_context(db, animal: dict) -> dict:
                     .sort([("date", -1), ("_id", -1)]))
 
     latest = sessions[0] if sessions else None
+
+    # THE TREND HAS TO BE FILTERED PER SESSION, not gated on the latest one.
+    #
+    # The careful withholding below checks whether the LATEST session was
+    # measured, and that check is correct. It was also the only one: this list
+    # took every session's weight regardless of which engine produced it, and
+    # the trend line was then printed whenever the latest happened to be real.
+    #
+    # Measured on this build before the fix, the context read
+    #     "Weight trend (oldest to newest): 223.0 -> 223.0 -> 362 -> 362 -> 223.0 kg"
+    # where the 362s came from random.Random(animal_id) via the baseline
+    # engine, and /chat duly answered a farmer "the estimated weight range for
+    # your Sahiwal cattle is 223-362 kg". An invented number, quoted as a
+    # measurement of their own animal, one line below the code that exists to
+    # prevent exactly that.
+    def _measured(session: dict) -> bool:
+        return str(session.get("result", {}).get("engine", "")).startswith("ml")
+
     weights = [s["weight_kg_mid"] for s in reversed(sessions)
-               if s.get("weight_kg_mid") is not None]
+               if s.get("weight_kg_mid") is not None and _measured(s)]
 
     import vkg  # local import to keep module load order simple
     risks, care_advice = [], []
@@ -130,6 +166,13 @@ def build_context(db, animal: dict) -> dict:
             # as measurements of their own animal.
             "measured": str(latest["result"].get("engine", "")).startswith("ml"),
             "weight_kg_mid": latest.get("weight_kg_mid"),
+            # The pipeline reports a RANGE and a second route that may openly
+            # contradict it. Both were already sitting in the stored session
+            # and both were being thrown away here, so the assistant answered
+            # "around 223.0 kg" about an estimate that actually spanned
+            # 172.7-274.4 and whose two methods disagreed by 100 kg. A single
+            # mid-point is the one number in that result nobody measured.
+            "weight_kg": latest["result"].get("weight_kg") or {},
             "health_flags": latest.get("health_flags", []),
             "risks": risks,
             "traits_scored": sum(1 for t in latest["result"].get("traits", [])
@@ -151,11 +194,42 @@ def _context_text(ctx: dict) -> str:
         f"Scoring sessions on record: {ctx['session_count']}.",
     ]
     ls = ctx["latest_session"]
+    if ls is None:
+        # Saying nothing here is not neutral. With no session line in the
+        # context the model has no fact to anchor on and invents one: measured,
+        # animal 356279812348 (zero sessions) was answered "we can estimate
+        # Tharparkar cattle id 356279812348's weight using the girth-length
+        # method", which describes a procedure that never ran.
+        lines.append(
+            "This animal has NO scoring session on record at all. Nothing has "
+            "ever measured her. Say plainly that no session has been done yet "
+            "and that one is needed - photographs of her side, her rear, and a "
+            "clear close-up of her ear tag. Do not invent, estimate, or "
+            "describe a method for guessing her weight or her scores.")
     if ls:
         if ls.get("measured"):
+            w = ls.get("weight_kg") or {}
+            lo, hi = w.get("low"), w.get("high")
+            if lo is not None and hi is not None:
+                weight_text = (
+                    f"weight estimated between {lo:.0f} and {hi:.0f} kg "
+                    f"(give the RANGE, never a single figure)")
+                cross = str(w.get("cross_check") or "")
+                if "DISAGREE" in cross.upper():
+                    weight_text += (
+                        ". Two different methods were used and they DISAGREE, "
+                        "so say the weight is indicative only and that a "
+                        "weighbridge is needed before selling or dosing")
+            elif ls.get("weight_kg_mid") is not None:
+                weight_text = f"weight around {ls['weight_kg_mid']} kg"
+            else:
+                weight_text = (
+                    "weight NOT measured - there was no object of known size "
+                    "in the photographs, so say a clear close-up of the ear "
+                    "tag is needed and do not estimate a weight")
             lines.append(
                 f"Latest session {ls['date']}: {ls['traits_scored']}/20 traits "
-                f"scored, weight around {ls['weight_kg_mid']} kg, "
+                f"scored, {weight_text}, "
                 f"health flags: {', '.join(ls['health_flags']) or 'none'}.")
         else:
             # The figures are WITHHELD, not merely labelled. Marking them
@@ -173,7 +247,10 @@ def _context_text(ctx: dict) -> str:
                 f"estimate a weight.")
         for r in ls["risks"]:
             lines.append(f"Screening risk: {r['label']} ({r['risk']}).")
-    if len(ctx["weight_trend"]) >= 2 and ls and ls.get("measured"):
+    # Every figure in this list is now individually known to have come from a
+    # measured session, so it no longer has to be suppressed just because the
+    # most recent session happened to be a demonstration one.
+    if len(ctx["weight_trend"]) >= 2:
         lines.append(f"Weight trend (oldest to newest): "
                      f"{' -> '.join(str(w) for w in ctx['weight_trend'])} kg.")
     for c in ctx["care_advice"]:
@@ -198,6 +275,11 @@ def _reply_ok(text: str | None, lang: str) -> bool:
     if lang == "hi" and not _DEVANAGARI.search(text):
         return False  # wrong language -> language-correct template instead
     if lang == "kn" and not _KANNADA.search(text):
+        return False
+    # Presence of the right script is not absence of the wrong one. A reply
+    # that is mostly Kannada with Han or Hangul spliced through it passed both
+    # checks above; it is not a reply a farmer can read, whatever it contains.
+    if lang in ("hi", "kn") and _CJK.search(text):
         return False
     if "STRICT RULES" in text or "ANIMAL RECORD" in text:
         return False  # echoing hidden instructions -> discard

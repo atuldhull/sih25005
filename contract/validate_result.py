@@ -152,25 +152,35 @@ def validate(result: dict, mode: str = "pipeline") -> list[str]:
         if name not in seen:
             p.append(f"traits: missing NDDB trait '{name}'")
 
-    # Adoption safety gate (pipeline mode only): scoring_loader.py uses this
-    # function's return value to decide whether to adopt the real ML result
-    # over the working baseline engine. A shape-valid result where every
-    # trait's score is null (e.g. pose/tag intelligence not yet implemented)
-    # must NOT pass - otherwise a totally unscored result could silently
-    # replace a working baseline the moment ml.pipeline becomes importable.
-    # This is deliberately checked before any relaxation of weight_kg's
-    # low/high requirement, since that relaxation would otherwise remove the
-    # only thing currently blocking an all-null result from validating.
-    if mode == "pipeline":
-        any_scored = any(
-            isinstance(t, dict) and t.get("score") is not None for t in traits
-        )
-        if not any_scored:
-            p.append(
-                "adoption gate: no trait has a non-null score - a fully "
-                "unscored pipeline result must not be adopted over the "
-                "baseline engine"
-            )
+    # THE ADOPTION GATE USED TO LIVE HERE, AND HAS BEEN REMOVED ON PURPOSE.
+    #
+    # It rejected any pipeline result in which every trait scored null, on the
+    # reasoning that a fully unscored result must not displace a working
+    # baseline. That reasoning treated "measured nothing" as a malformed
+    # result. It is not malformed - it is a finding, and it is often the only
+    # true thing the system can say.
+    #
+    # Because a rejected result fell through to the baseline engine, this gate
+    # did the exact opposite of what its name suggests: it converted honest
+    # refusals into fabrications. Measured on this build, every one of these
+    # returned HTTP 200 with twenty confident scores and a weight near 350 kg:
+    #     a drawing of a chair        (pipeline: 0/20, no_animal_detected)
+    #     pure random RGB noise       (byte-identical output)
+    #     a 44-byte ASCII text file   (byte-identical output)
+    # along with 12 of 16 real photographs of Indian cattle and buffalo taken
+    # without an ear-tag close-up. One of those fabrications wrote a Lumpy Skin
+    # Disease row into a veterinary officer's alert feed.
+    #
+    # A validator's job is to check SHAPE. Whether a shape-valid result is
+    # worth adopting is a policy question, and it now sits in one place -
+    # server/scoring_loader.py - where it is answered "yes, always": a
+    # contract-valid result is the answer, and each trait carries its own
+    # not_scored_reason for the app to show.
+    #
+    # If you are considering restoring this, note that the two rules it was
+    # protecting are still enforced below and unchanged: weight_kg low and
+    # high must be null together or numeric together (never one of each), and
+    # every one of the twenty NDDB traits must be present.
 
     w = result.get("weight_kg")
     if not isinstance(w, dict):

@@ -1,4 +1,4 @@
-"""Local RAG over OUR OWN reference corpus (server/knowledge/*.md).
+"""Local RAG over OUR OWN reference corpus (server/knowledge/*.md + vkg.json).
 
 Strictly-our-data by construction: the corpus is authored in this repo,
 embeddings are computed locally (Ollama nomic-embed-text), stored in
@@ -10,6 +10,7 @@ falls back to keyword overlap - worse ranking, same corpus, still
 strictly our data.
 """
 import hashlib
+import json
 import math
 import os
 import re
@@ -19,6 +20,7 @@ from pathlib import Path
 import httpx
 
 KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"
+VKG_PATH = Path(__file__).parent / "vkg.json"
 OLLAMA_URL = "http://127.0.0.1:11434"
 EMBED_MODEL = os.environ.get("SIH_EMBED_MODEL", "nomic-embed-text")
 
@@ -26,8 +28,56 @@ _index_lock = threading.Lock()
 _indexed = False
 
 
+def _load_vkg_chunks() -> list[dict]:
+    """The veterinary knowledge graph's farmer advice, made retrievable.
+
+    server/vkg.json already carries authored care advice for twelve conditions
+    - mastitis, lameness, LSD, FMD and the rest - in English and Hindi. Until
+    now the only route to any of it was for the LAST scoring session to have
+    flagged that exact condition, so a farmer who simply described what they
+    could see got nothing.
+
+    The measured consequence: asked "her udder is swollen and hard", the
+    assistant steered to Lumpy Skin Disease, because LSD was that animal's
+    flagged risk - while the correct mastitis advice sat in this file, in this
+    repo, unreachable. Retrieval had nothing better to offer, because the .md
+    corpus contains the word "mastitis" zero times.
+
+    Nothing here is generated. This indexes text a person already wrote. It
+    does not invent husbandry advice and must never be used to.
+    """
+    try:
+        data = json.loads(VKG_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []      # a missing or broken vkg.json costs retrieval, not the server
+
+    chunks = []
+    for key, cond in (data.get("conditions") or {}).items():
+        advice = (cond.get("advice_farmer") or "").strip()
+        if not advice:
+            continue
+
+        # The symptom names ride along in the text so that a farmer describing
+        # what they can see ("swollen udder", "limping") matches the condition,
+        # even though the advice paragraph itself never names the symptom.
+        body = advice
+        symptoms = ", ".join(sorted(cond.get("symptoms", {}))).replace("_", " ")
+        if symptoms:
+            body += f"\n\nSigns associated with this: {symptoms}."
+        hindi = (cond.get("advice_farmer_hi") or "").strip()
+        if hindi:
+            body += f"\n\n{hindi}"
+
+        title = cond.get("label") or key.replace("_", " ").title()
+        digest = hashlib.sha256(f"vkg:{key}\n{body}".encode()).hexdigest()[:16]
+        chunks.append({"_id": digest, "source": "vkg.json",
+                       "title": title, "text": body})
+    return chunks
+
+
 def _load_chunks() -> list[dict]:
-    """Every '## heading' section in every knowledge file is one chunk."""
+    """Every '## heading' section in every knowledge file is one chunk, plus
+    one chunk per authored condition in the veterinary knowledge graph."""
     chunks = []
     for md in sorted(KNOWLEDGE_DIR.glob("*.md")):
         text = md.read_text(encoding="utf-8")
@@ -39,6 +89,7 @@ def _load_chunks() -> list[dict]:
             digest = hashlib.sha256(f"{title}\n{body}".encode()).hexdigest()[:16]
             chunks.append({"_id": digest, "source": md.name,
                            "title": title, "text": body})
+    chunks.extend(_load_vkg_chunks())
     return chunks
 
 
@@ -125,5 +176,29 @@ def search(db, query: str, k: int = 2) -> list[dict]:
             for d in results[:k]]
 
 
+# Measured, not chosen. 0.45 sat BELOW this embedder's noise floor: literal
+# gibberish ("asdfgh qwerty zxcvb") scored 0.474, an income-tax question 0.541
+# and a train-timetable question 0.516 - all "strong" - so essentially every
+# question came back with citations, and the citations were decoration. A
+# deworming answer was sourced to "capture-guide.md - How to take the rear
+# photo", and a feeding answer to "eligibility.md - Why the window exists".
+#
+# Re-measured after vkg.json was indexed, 8 in-corpus queries against 6
+# out-of-corpus ones:
+#     relevant  0.617 - 0.818   (min: "she is very thin and not eating")
+#     junk      0.404 - 0.516   (max: "what time is the train to Delhi?")
+# 0.57 sits in that gap: all 8 relevant pass, none of the 6 junk do.
+#
+# Two honest caveats. The sample is 14 queries, so treat this as a floor that
+# separates the cases we tested rather than a calibrated operating point - if
+# a real question you would want answered scores below it, re-measure rather
+# than nudging the number. And a score above the bar means the chunk is ON
+# TOPIC, never that the answer built from it is correct.
+EMBEDDING_STRONG = 0.57
+KEYWORD_STRONG = 0.15
+
+
 def is_strong(hit: dict) -> bool:
-    return hit["score"] >= (0.45 if hit["method"] == "embedding" else 0.15)
+    if hit["method"] == "embedding":
+        return hit["score"] >= EMBEDDING_STRONG
+    return hit["score"] >= KEYWORD_STRONG
