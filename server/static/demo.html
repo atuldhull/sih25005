@@ -143,13 +143,18 @@
   <div class="panel on" id="p-score">
     <div class="card">
       <h3>Score this animal</h3>
-      <div class="muted" style="margin-bottom:10px">Side photo + rear photo
-        (+ optional 8-s walking video). The server refuses ineligible
-        animals — that's a feature.</div>
+      <div class="muted" style="margin-bottom:10px">Side photo + rear photo,
+        plus an optional close-up of the ear tag and an optional 8-s walking
+        video. The server refuses ineligible animals — that's a feature.<br>
+        <b>The tag close-up is what makes centimetres possible.</b> Without it
+        the angle traits still score and everything measured in centimetres —
+        stature, body length, heart girth and the weight — honestly refuses,
+        because nothing in the frame has a known size.</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <input type="file" id="fSide" accept="image/*">
-        <input type="file" id="fRear" accept="image/*">
-        <input type="file" id="fVid" accept="video/*">
+        <label class="muted">side <input type="file" id="fSide" accept="image/*"></label>
+        <label class="muted">rear <input type="file" id="fRear" accept="image/*"></label>
+        <label class="muted">tag close-up <input type="file" id="fTag" accept="image/*"></label>
+        <label class="muted">walking video <input type="file" id="fVid" accept="video/*"></label>
         <button class="go" id="goScore">Score animal</button>
       </div>
       <div class="sys" id="scoreMsg" hidden></div>
@@ -189,7 +194,7 @@
   // one upload attempt = one id; a RETRY of the same files reuses it so
   // the server's idempotency (same device_session_id) actually engages
   let attemptId = null;
-  ["fSide", "fRear", "fVid"].forEach(id =>
+  ["fSide", "fRear", "fTag", "fVid"].forEach(id =>
     $(id).addEventListener("change", () => { attemptId = null; }));
 
   function el(tag, cls, text) {
@@ -261,6 +266,143 @@
   }));
 
   /* ---------- scorecard rendering ---------- */
+  // ---- Breed identity -----------------------------------------------
+  // The exact-breed head was measured at 38.1% on a source-held-out split and
+  // disables itself, so there is no breed answer to show. What ships instead
+  // is the GROUP head - 80.2% against a 60.7% background-only control - and
+  // the species head. Until this panel existed none of that reached a screen,
+  // and the one breed field the app could see was a bare false.
+  //
+  // The rule this panel exists to enforce: breed_verified === false means NOT
+  // CHECKED, never CONTRADICTED. Rendering it as a mismatch would accuse a
+  // correctly registered animal on every single record.
+  // ---- Weight ---------------------------------------------------------
+  // The estimate comes from reconstructing a torso volume out of the two
+  // photographs, and a second, unrelated route (girth and length) is computed
+  // alongside it. Showing only the range would hide the most useful thing on
+  // the card: whether the two methods agreed. They are never averaged - when
+  // they disagree the interval is widened to span both, and that has to be
+  // visible or the wider interval just looks like a vaguer answer.
+  function renderWeight(res) {
+    const w = res.weight_kg || {};
+    const card = el("div", "card");
+    card.appendChild(el("h3", null, "Weight"));
+
+    if (typeof w.low !== "number" || typeof w.high !== "number") {
+      card.appendChild(el("div", "muted",
+        "Not measured. Weight needs a real scale in centimetres, which comes " +
+        "from the ear tag - without a readable tag in the side photograph " +
+        "there is no way to turn pixels into kilograms, and a number would be " +
+        "a guess an animal might be sold on."));
+      return card;
+    }
+
+    const rows = el("div", "cat");
+    const r = el("div", "trow");
+    r.appendChild(el("div", "tname", "Estimated live weight"));
+    r.appendChild(el("div", "tmeas", w.method
+      ? String(w.method).replace(/-/g, " ") : "method not recorded"));
+    r.appendChild(el("div", "tscore", `${Math.round(w.low)}–${Math.round(w.high)} kg`));
+    rows.appendChild(r);
+
+    if (w.cross_check) {
+      const disagrees = /DISAGREE/i.test(w.cross_check);
+      const c = el("div", "trow");
+      c.appendChild(el("div", "tname", "Second method"));
+      c.appendChild(el("div", "tmeas", disagrees
+        ? "an independent route disagrees - the range above has been widened "
+          + "to span both rather than averaging them"
+        : "an independent route agrees, within tolerance"));
+      c.appendChild(el("div", "tscore" + (disagrees ? " na" : ""),
+        String(w.cross_check).replace(/ - DISAGREES.*$/i, "")));
+      rows.appendChild(c);
+    }
+    card.appendChild(rows);
+    card.appendChild(el("div", "muted",
+      "The interval is dominated by an assumed body density and by the tag " +
+      "scale, which enters as a CUBE - a 4% error in centimetres per pixel is " +
+      "a 12% error in kilograms. Not calibrated against weighed animals."));
+    return card;
+  }
+
+  function renderIdentity(res) {
+    const card = el("div", "card");
+    card.appendChild(el("h3", null, "Breed identity"));
+
+    const status = res.breed_verify_status || "unverified";
+    if (status === "unverified") {
+      card.appendChild(el("div", "muted",
+        "Registered as " + (res.breed_registered || "unknown") +
+        ". The exact-breed model is switched off - measured at 38.1% on " +
+        "photographs from a source it had never seen, which is not worth " +
+        "acting on. This is NOT a mismatch: the breed was never checked."));
+    } else if (status === "agree") {
+      card.appendChild(el("div", "muted",
+        "The photograph agrees with the registered breed, " +
+        (res.breed_registered || "unknown") + "."));
+    } else {
+      card.appendChild(el("div", "risk",
+        "The photograph does not match the registered breed (" +
+        (res.breed_registered || "unknown") + "). Worth a human check of " +
+        "the record - not an automatic correction."));
+    }
+
+    const rows = el("div", "cat");
+
+    if (res.predicted_species) {
+      const r = el("div", "trow");
+      r.appendChild(el("div", "tname", "Species"));
+      r.appendChild(el("div", "tmeas",
+        pct(res.species_confidence) + " confident" +
+        (res.species_consistent === false
+          ? " - disagrees with the record" : "")));
+      r.appendChild(el("div", "tscore", res.predicted_species));
+      rows.appendChild(r);
+    }
+
+    if (res.predicted_group) {
+      const agree = res.group_consistent;
+      const r = el("div", "trow");
+      r.appendChild(el("div", "tname", "Breed group"));
+      // group_reliable false means the model answered but its own measured
+      // recall for that group is poor (exotic_dairy is 43%), so it is shown
+      // as a hint and never as a finding.
+      let note = pct(res.group_confidence) + " confident";
+      if (res.group_reliable === false) {
+        note += " - below this group's own reliability bar, treat as a hint";
+      } else if (agree === true) {
+        note += " - consistent with " + (res.breed_registered || "the record");
+      } else if (agree === false) {
+        note += " - does NOT match " + (res.breed_registered || "the record") +
+                ", worth checking the record";
+      }
+      r.appendChild(el("div", "tmeas", note));
+      r.appendChild(el("div", "tscore" + (agree === false ? " na" : ""),
+        String(res.predicted_group).replace(/_/g, " ")));
+      rows.appendChild(r);
+    }
+
+    if (!res.predicted_species && !res.predicted_group) {
+      rows.appendChild(el("div", "muted",
+        "No identity signal was produced for this session."));
+    }
+    card.appendChild(rows);
+
+    // Image quality is reported rather than used to refuse: measured, the
+    // pose model still produces usable joints well below the old blur bar.
+    if (res.quality_passed === false) {
+      card.appendChild(el("div", "muted",
+        "Image quality was flagged (soft or badly exposed). The session was " +
+        "still scored - blur was measured against what it actually costs - " +
+        "but treat these measurements as lower confidence."));
+    }
+    return card;
+  }
+
+  function pct(v) {
+    return (typeof v === "number") ? Math.round(v * 100) + "%" : "unknown";
+  }
+
   function renderScorecard(target, res) {
     // bind the session id HERE: the new-session card and a history card
     // can be on screen at once, and each row must open ITS OWN overlay
@@ -282,6 +424,22 @@
       sum.appendChild(s);
     });
     target.appendChild(sum);
+
+    // Measured: the real pipeline is adopted on about a third of photographs.
+    // On the rest the baseline engine answers instead, and it scores all
+    // twenty traits and produces a weight - none of it measured from the
+    // image. Beside twenty confident-looking numbers, a small "Baseline" label
+    // in the summary is not enough to convey that, so it is said outright.
+    if (!(res.engine && res.engine.startsWith("ml"))) {
+      target.appendChild(el("div", "risk high",
+        "DEMONSTRATION DATA - these scores were NOT measured from these " +
+        "photographs. The baseline engine produced them because the ML " +
+        "pipeline could not score this pair. Every trait score, the weight " +
+        "and the confidence figures below are placeholders."));
+    }
+
+    target.appendChild(renderWeight(res));
+    target.appendChild(renderIdentity(res));
 
     if (res.escalated) {
       const rc = el("div", "risk high",
@@ -391,6 +549,8 @@
     fd.append("device_session_id", attemptId);
     fd.append("side_photo", side);
     fd.append("rear_photo", rear);
+    const tag = $("fTag").files[0];
+    if (tag) fd.append("tag_photo", tag);
     if (vid) fd.append("gait_video", vid);
     $("goScore").disabled = true;
     msg.hidden = false; msg.textContent = "Scoring…";
@@ -490,6 +650,22 @@
       if (!alerts.length) { box.textContent = "No escalations yet."; return; }
       alerts.forEach(a => {
         const c = el("div", "alert-card");
+        // The baseline engine invents symptoms, and those reach this feed as
+        // real escalations about animals nothing examined. The alert is still
+        // shown - the escalation path is a feature that has to be
+        // demonstrable - but a vet officer must not act on a placeholder.
+        // ABSENT counts as demonstration, not as verified. Alerts stored
+        // before this field existed - which is every seeded demo-story alert,
+        // including a Lumpy Skin Disease escalation - carry no provenance at
+        // all, and `if (a.demonstration)` left them looking like real
+        // findings. Unknown provenance warns; that is the same rule the
+        // scorecard applies to a missing `engine`.
+        if (a.demonstration !== false) {
+          c.appendChild(el("div", "risk high",
+            "DEMONSTRATION ALERT - the findings behind this were produced " +
+            "by the baseline engine, not measured from the photographs. " +
+            "Do not act on it."));
+        }
         const head = el("div");
         head.appendChild(el("b", null,
           (a.top_risks || []).join(", ") || "escalation"));

@@ -5,8 +5,19 @@
   "animal_id": "356279812345",
   "species": "cattle",
   "breed_registered": "Gir",
-  "breed_verified": true,
-  "breed_verify_confidence": 0.91,
+  "breed_verified": null,
+  "breed_verify_confidence": null,
+
+  "_breed_note": "breed_verified is NULL because exact-breed verification was MEASURED and does not work on data we can legally use: 38.1% source-held-out, and its confidence carries no information (tightening from answering 100% of the time to 30% moves accuracy +5.6 points). The model disables its own breed head. The fields below are what replaces it - they are ADDITIVE and optional, so the app may ignore them until Person 1 renders them.",
+
+  "predicted_species": "cattle",
+  "species_confidence": 0.97,
+  "species_consistent": true,
+  "predicted_group": "red_zebu",
+  "group_confidence": 0.93,
+  "group_consistent": true,
+  "group_reliable": true,
+  "breed_verify_note": null,
 
   "eligible": true,
   "eligible_reason": "first lactation, day 47 after calving",
@@ -70,6 +81,9 @@
     "measure_class: A=angle (no scale), B=ratio (no scale), C=needs ear-tag cm scale, SMAL=needs 3D model",
     "the 8 officially-subjective traits are allowed lower confidence - that is honest, not broken",
     "buffalo: teat traits measured on left REAR teat; rump width landmarks differ",
-    "weight_kg.low and .high are BOTH null when weight could not be measured - never a made-up number; the app shows 'not measured'"
+    "weight_kg.low and .high are BOTH null when weight could not be measured - never a made-up number; the app shows 'not measured'",
+    "breed_verified is null, not false, when breed could not be verified. false would mean the image CONTRADICTS the record - an accusation against a registered animal. The server currently coerces null to false because the app declares the field non-nullable; breed_verify_status carries the honest state ('unverified' / 'agree' / 'disagree') until the app can accept a null. The app must NOT render false as a breed mismatch",
+    "predicted_group is the shippable breed signal: one of red_zebu, grey_draught, dwarf_cattle, exotic_dairy, buffalo. 80.2% source-held-out against a 60.7% background-only control. group_consistent compares it to breed_registered - a mismatch is worth a human check of the record, not an automatic correction",
+    "group_reliable false means the model answered but its own measured recall for that group is poor (exotic_dairy is 43%) or its confidence was under the measured threshold - show it as a hint, never as a finding"
   ]
 }

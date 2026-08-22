@@ -1,6 +1,19 @@
-# Python
-__pycache__/
+# Miscellaneous
+*.class
+*.log
 *.pyc
+*.swp
+.history
+.svn/
+.atom/
+.swiftpm/
+migrate_working_dir/
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# ------------------------------------------------------- Python / server
 server/venv/
 server/.venv/
 
@@ -9,22 +22,61 @@ server/.venv/
 *.env
 server/keys.json
 
-# Flutter / app build output
-app/build/
-app/.dart_tool/
-
 # Uploaded photos/videos, rendered overlays, voice clips during testing
 server/uploads/
 server/overlays_cache/
 server/voice_cache/
 
-# ML weights and datasets (too big for git - share via Drive/Kaggle)
+# ML weights and datasets (too big for git - fetched, see models/README.md)
 ml/weights/
 ml/datasets/
+models/
 *.pt
 *.pth
 *.onnx
+# The RT-DETRv2 export is safetensors, which *.pt does NOT cover - without
+# this line a 40-160 MB blob lands in git. GitHub hard-blocks single files
+# over 100 MB, and the pose checkpoint is over that on its own.
+*.safetensors
+*.bin
 
-# OS junk
-Thumbs.db
-.DS_Store
+# Test-generated debug output
+debug/
+
+# ------------------------------------------------------- Flutter / Dart
+# The app lives at the repository ROOT (lib/, android/, ios/), which is where
+# Android Studio expects it, so these paths are root-anchored deliberately.
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+app/build/
+app/.dart_tool/
+
+# Symbolication and obfuscation output
+app.*.symbols
+app.*.map.json
+
+# Android Studio build artifacts
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# IDE
+*.iml
+*.ipr
+*.iws
+.idea/
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Gradle build output for the Android module (the root /build/ rule above
+# does not cover it - this one is nested under android/).
+android/build/
+android/.gradle/

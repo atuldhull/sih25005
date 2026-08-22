@@ -1,0 +1,64 @@
+# ML pipeline dependencies.
+#
+# PINNED ON PURPOSE. server/scoring_loader.py imports ml.pipeline into the
+# SERVER's own process, so these become the server's libraries too - install
+# them into the environment the server runs in, not a separate venv.
+
+# --- the stack every model was validated against ---------------------------
+torch==2.13.0
+torchvision==0.28.0
+safetensors==0.8.0
+
+# transformers is the load-bearing pin. RT-DETRv2 stores its per-layer
+# prediction heads TIED. Version 5.15.1 expects them untied, fills the gap
+# with RANDOM weights, and the ear_tag path reads decoder layer 1 - one of
+# the layers it randomises.
+#
+# It does not crash. It returns a confident-looking 0.62 detection with a box
+# outside the image, and the value changes on every process start. Under
+# 5.0.0 the heads load correctly - verified by loading in three separate
+# processes and comparing the weights byte for byte.
+#
+# Do not relax this to >=. server/preflight.py FAILS if it is not exactly
+# 5.0.0, because a wrong version here stays invisible until someone actually
+# looks at a bounding box.
+transformers==5.0.0
+
+# DINOv2 backbone for breed/group verification, and HRNet-W32 for keypoints.
+# Both are plain torch on top of timm.
+timm==1.0.28
+
+opencv-python
+numpy
+Pillow
+
+# SAM2, for the animal silhouette. Without it segment_animal() falls back to
+# the RT-DETR box as a plain rectangle and reports segmentation_degraded -
+# which is not a crash, so it was absent from this file and from the server's
+# environment for a long time without anyone noticing. What silently stopped
+# working: chest_bottom derivation (and with it body_depth, chest_depth and
+# chest_width_to_depth_ratio), the udder floor, and the whole 2D -> 3D weight
+# estimator, which cannot reconstruct a volume from a rectangle.
+#
+# Note the provenance. This is a third-party republish of Meta's code to PyPI,
+# not an official Meta package; the official install is
+#     pip install git+https://github.com/facebookresearch/sam2.git
+# Either works. --no-deps is used deliberately because its unpinned torch
+# requirement would otherwise pull a version other than the 2.13.0 above:
+#     pip install --no-deps sam2==1.1.0
+#     pip install hydra-core iopath tqdm
+sam2==1.1.0
+hydra-core
+iopath
+tqdm
+
+# --- deliberately NOT here -------------------------------------------------
+# rtmlib / mmpose / mmcv: the keypoint model is HRNet-W32 in plain torch, not
+#   RTMPose. mmcv does not install on Python 3.12+ (pkgutil.ImpImporter was
+#   removed), which is why the trainer is self-contained. Same top-down
+#   heatmap method, no mm* dependency.
+#
+# paddleocr / paddlepaddle: ear-tag OCR is not implemented. tag_reader.py
+#   measures SCALE from the tag button and returns identity=None. Those two
+#   packages are a several-hundred-MB install for code that does not exist
+#   yet - add them back in the same commit that adds the OCR, not before.

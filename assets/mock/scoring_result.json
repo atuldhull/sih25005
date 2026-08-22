@@ -1,0 +1,220 @@
+{
+  "animal_id": "356279812345",
+  "species": "cattle",
+  "breed_registered": "Gir",
+  "breed_verified": true,
+  "eligible": true,
+  "eligible_reason": "first lactation, day 47 after calving",
+  "traits": [
+    {
+      "name": "Stature",
+      "category": "Dairy Strength",
+      "score": 7,
+      "confidence": 0.92,
+      "measured_value": "134 cm",
+      "measure_class": "C",
+      "overlay_points": [[420, 180], [420, 610]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Heart Girth",
+      "category": "Dairy Strength",
+      "score": 6,
+      "confidence": 0.78,
+      "measured_value": "188 cm",
+      "measure_class": "C",
+      "overlay_points": [[405, 360], [575, 360]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Body Length",
+      "category": "Dairy Strength",
+      "score": 7,
+      "confidence": 0.9,
+      "measured_value": "152 cm",
+      "measure_class": "C",
+      "overlay_points": [[410, 285], [690, 300]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Body Depth",
+      "category": "Dairy Strength",
+      "score": 6,
+      "confidence": 0.88,
+      "measured_value": "74 cm",
+      "measure_class": "C",
+      "overlay_points": [[535, 285], [535, 510]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Angularity",
+      "category": "Dairy Strength",
+      "score": 7,
+      "confidence": 0.84,
+      "measured_value": "42 deg",
+      "measure_class": "A",
+      "overlay_points": [[430, 350], [510, 405], [570, 350]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Rump Angle",
+      "category": "Rump",
+      "score": 7,
+      "confidence": 0.86,
+      "measured_value": "31 deg",
+      "measure_class": "A",
+      "overlay_points": [[560, 300], [640, 315], [710, 350]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Rump Width",
+      "category": "Rump",
+      "score": 6,
+      "confidence": 0.87,
+      "measured_value": "48 cm",
+      "measure_class": "C",
+      "overlay_points": [[570, 320], [690, 320]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Rear Legs Set",
+      "category": "Feet & Legs",
+      "score": 5,
+      "confidence": 0.73,
+      "measured_value": "157 deg",
+      "measure_class": "A",
+      "overlay_points": [[610, 390], [640, 520], [665, 635]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Rear Legs Rear View",
+      "category": "Feet & Legs",
+      "score": 6,
+      "confidence": 0.7,
+      "measured_value": "6.2 deg",
+      "measure_class": "B",
+      "overlay_points": [[580, 430], [620, 620]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Foot Angle",
+      "category": "Feet & Legs",
+      "score": 6,
+      "confidence": 0.82,
+      "measured_value": "48 deg",
+      "measure_class": "A",
+      "overlay_points": [[620, 565], [645, 625], [670, 630]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Fore Udder Attachment",
+      "category": "Udder",
+      "score": 7,
+      "confidence": 0.76,
+      "measured_value": "0.84 ratio",
+      "measure_class": "B",
+      "overlay_points": [[515, 455], [555, 475]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Rear Udder Height",
+      "category": "Udder",
+      "score": 7,
+      "confidence": 0.82,
+      "measured_value": "34 cm",
+      "measure_class": "C",
+      "overlay_points": [[570, 430], [570, 520]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Central Ligament",
+      "category": "Udder",
+      "score": 6,
+      "confidence": 0.72,
+      "measured_value": "0.76 ratio",
+      "measure_class": "B",
+      "overlay_points": [[610, 455], [610, 535]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Udder Depth",
+      "category": "Udder",
+      "score": 6,
+      "confidence": 0.83,
+      "measured_value": "18 cm",
+      "measure_class": "C",
+      "overlay_points": [[585, 470], [585, 530]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Front Teat Placement",
+      "category": "Udder",
+      "score": 6,
+      "confidence": 0.71,
+      "measured_value": "0.48 ratio",
+      "measure_class": "B",
+      "overlay_points": [[570, 495], [615, 500]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Teat Length",
+      "category": "Udder",
+      "score": 7,
+      "confidence": 0.85,
+      "measured_value": "6.8 cm",
+      "measure_class": "C",
+      "overlay_points": [[585, 505], [585, 550]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Rear Teat Placement",
+      "category": "Udder",
+      "score": 6,
+      "confidence": 0.72,
+      "measured_value": "0.51 ratio",
+      "measure_class": "B",
+      "overlay_points": [[625, 500], [670, 505]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Rear Udder Width",
+      "category": "Udder",
+      "score": 7,
+      "confidence": 0.84,
+      "measured_value": "43 cm",
+      "measure_class": "C",
+      "overlay_points": [[555, 450], [680, 450]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Teat Thickness",
+      "category": "Udder",
+      "score": 6,
+      "confidence": 0.8,
+      "measured_value": "2.6 cm",
+      "measure_class": "C",
+      "overlay_points": [[620, 510], [620, 535]],
+      "not_scored_reason": null
+    },
+    {
+      "name": "Body Condition Score (BCS)",
+      "category": "General",
+      "score": 5,
+      "confidence": 0.68,
+      "measured_value": "BCS 3.0 / 5",
+      "measure_class": "C",
+      "overlay_points": [[545, 315], [625, 350]],
+      "not_scored_reason": null
+    }
+  ],
+  "weight_kg": {
+    "low": 385,
+    "high": 412,
+    "method": "girth-regression"
+  },
+  "symptom_vector": [],
+  "risk_report": [],
+  "health_flags": [],
+  "captured_at": "2026-08-16T10:30:00",
+  "synced": false
+}

@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import time
@@ -225,15 +226,80 @@ def get_animal(animal_id: str):
 
 @app.post("/session")
 def create_session(
-    animal_id: str = Form(...),
-    device_session_id: str = Form(...),
     side_photo: UploadFile = File(...),
     rear_photo: UploadFile = File(...),
+    animal_id: str = Form(None),
+    device_session_id: str = Form(None),
     gait_video: UploadFile = File(None),
+    # --- compatibility with the field names the app actually sends -------
+    # The Flutter client posts tag_id and names the video 'video'. Replaying
+    # its real request returned 422 on animal_id and device_session_id, so
+    # the app could not upload a session at all; and because gait_video is
+    # optional, a video named 'video' was silently DROPPED - a 200 with the
+    # farmer's recording quietly discarded, which is worse than a refusal.
+    #
+    # tag_id and animal_id are the same thing: the 12-digit ear-tag number
+    # IS the _id in the BPA records, so this is an alias, not a guess.
+    tag_id: str = Form(None),
+    video: UploadFile = File(None),
+    # The close-up of the ear tag. Optional, and absent from the app today -
+    # ScanTagScreen captures the tag NUMBER, not a photograph of it.
+    #
+    # It is accepted here because everything measured in centimetres depends
+    # on it. In the side photograph the tag is a thumbnail and the detector
+    # frequently does not find it at all; in a close-up the tag fills the
+    # frame, no detector is needed, and the printed 18 mm digit row gives a
+    # scale directly. ml/tag_intelligence/panel_transfer.py then carries that
+    # scale to the side photograph using the tag as a bridge.
+    #
+    # Without it: the class-C traits, heart girth and the weight all refuse,
+    # honestly, and the angle traits still work. With it they become
+    # measurable. Both names are accepted so the app can use either.
+    tag_photo: UploadFile = File(None),
+    tag_image: UploadFile = File(None),
 ):
     # sync on purpose: FastAPI runs sync handlers in a threadpool, so
     # when the real ML pipeline (seconds of CPU) replaces the fake
     # engine, /ping and /chat keep answering while a session scores
+    animal_id = animal_id or tag_id
+    gait_video = gait_video if gait_video is not None else video
+    if not animal_id:
+        raise HTTPException(
+            status_code=422,
+            detail="animal_id (or tag_id) is required")
+
+    # The client may not send a session id. Derive one from the CONTENT
+    # instead of generating a random one, because this id is the offline
+    # queue's idempotency key: a retry of the same upload must collapse to
+    # the same session, and a random id would turn every retry into a
+    # duplicate record. Same animal + same bytes = same id; retake a photo
+    # and the bytes change, so it correctly becomes a new session.
+    #
+    # THE EAR-TAG CLOSE-UP HAS TO BE IN THIS HASH. It was left out, and it is
+    # the one photograph the entire centimetre scale is derived from - so
+    # swapping it changed nothing: the server recognised the side, rear and
+    # video, called it a duplicate, and returned the scorecard computed from
+    # the OLD tag in 0.2 seconds without looking at the new one.
+    #
+    # In the field that is the worst possible case. A farmer whose session
+    # refused every centimetre trait for want of a readable tag walks back to
+    # the animal, takes a better close-up, resubmits - and gets the same
+    # refusal handed straight back, with no way to tell that nothing was
+    # re-measured. It was also quietly invalidating our own A/B tests of tag
+    # images, which is how it was found.
+    if not device_session_id:
+        h = hashlib.sha256()
+        h.update(str(animal_id).encode())
+        tag_for_hash = tag_photo if tag_photo is not None else tag_image
+        for up in (side_photo, rear_photo, gait_video, tag_for_hash):
+            if up is None:
+                continue
+            up.file.seek(0)
+            for chunk in iter(lambda: up.file.read(1 << 20), b""):
+                h.update(chunk)
+            up.file.seek(0)
+        device_session_id = f"auto-{h.hexdigest()[:24]}"
+
     # this id becomes a FOLDER NAME and a URL path segment. Unvalidated,
     # a timestamp id ("...T10:30:00") is an illegal Windows path (500 on
     # every retry) and "../.." would escape the uploads folder entirely.
@@ -267,11 +333,12 @@ def create_session(
 
     # size-check EVERYTHING before writing ANYTHING, so a refused
     # upload never leaves a half-written orphan dir behind
+    tag_close_up = tag_photo if tag_photo is not None else tag_image
     caps = {"side.jpg": 10 * 1024 * 1024, "rear.jpg": 10 * 1024 * 1024,
-            "gait.mp4": 25 * 1024 * 1024}
+            "gait.mp4": 25 * 1024 * 1024, "tag.jpg": 10 * 1024 * 1024}
     blobs = {}
     for filename, upload in [("side.jpg", side_photo), ("rear.jpg", rear_photo),
-                             ("gait.mp4", gait_video)]:
+                             ("gait.mp4", gait_video), ("tag.jpg", tag_close_up)]:
         if upload is not None:
             data = upload.file.read(caps[filename] + 1)
             if len(data) > caps[filename]:
@@ -289,7 +356,8 @@ def create_session(
         saved[filename] = str(session_dir / filename)
 
     result = score_animal(saved.get("side.jpg"), saved.get("rear.jpg"),
-                          saved.get("gait.mp4"), animal)
+                          saved.get("gait.mp4"), animal,
+                          tag_img=saved.get("tag.jpg"))
     result["session_id"] = device_session_id
     result["eligible"] = eligible
     result["eligible_reason"] = reason
@@ -300,14 +368,45 @@ def create_session(
         result["breed_registered"] = animal.get("breed")
     if result.get("animal_id") is None:
         result["animal_id"] = animal_id
-    if result.get("breed_verified") is None:
-        result["breed_verified"] = False
-        result["breed_verify_confidence"] = 0.0
+    # captured_at is server-injected: the pipeline honestly does not know
+    # wall-clock time, so it leaves this None and the server fills it.
     if not result.get("captured_at"):
         result["captured_at"] = datetime.now().astimezone().isoformat(
             timespec="seconds")
     if result.get("synced") is None:
         result["synced"] = True
+
+    # BREED VERIFICATION - the one place the two branches genuinely
+    # disagreed, so the reasoning is recorded here rather than resolved
+    # silently.
+    #
+    # ml-dev left breed_verified as None: setting it to anything else is
+    # fabricating a value. The measurements agree. Exact-breed verification
+    # on the data we can legally use scores 38.1% source-held-out, and its
+    # confidence carries no information - tightening the threshold from
+    # 100% to 30% coverage moves accuracy only +5.6 points. The trained
+    # model disables its own breed head for exactly this reason.
+    #
+    # server-dev coerced None to False, because the app's models declare
+    # this field non-nullable and a null is a hard decode failure on the
+    # phone. That constraint is real and the server cannot fix it alone.
+    #
+    # Resolution until Person 1 can accept a null: keep the wire value a
+    # bool so the app cannot crash, and carry the honest state alongside it
+    # in breed_verify_status, which the app may ignore safely.
+    #
+    # False here means NOT VERIFIED. It does not mean "contradicted". The
+    # app must not render it as a breed mismatch - that would accuse a
+    # correctly registered animal on every single record.
+    if result.get("breed_verified") is None:
+        result["breed_verified"] = False
+        result["breed_verify_confidence"] = 0.0
+        result.setdefault("breed_verify_status", "unverified")
+    else:
+        result.setdefault(
+            "breed_verify_status",
+            "agree" if result["breed_verified"] else "disagree")
+
     # pixel coordinates are integers on the wire: the app parses them as
     # ints and a float would be a hard decode failure on the phone
     for t in result.get("traits", []):
@@ -331,8 +430,9 @@ def create_session(
                                 "village": animal["village"],
                                 "animals_affected_14d": others + 1})
     result["herd_alerts"] = herd_alerts
-    result["reports"] = reports.build_reports(animal, risks,
-                                              result["symptom_vector"], herd_alerts)
+    result["reports"] = reports.build_reports(
+        animal, risks, result["symptom_vector"], herd_alerts,
+        screened=bool(result.get("vet_screened", False)))
     result["escalated"] = vkg.needs_escalation(risks) or bool(herd_alerts)
     if result["escalated"]:
         # upsert by session_id: a retried upload refreshes its own alert
@@ -343,6 +443,18 @@ def create_session(
             "animal_id": animal_id,
             "village": animal["village"],
             "date": date.today().isoformat(),
+            # Which engine produced the findings behind this alert. The
+            # baseline engine INVENTS symptoms - skin_nodules at confidence
+            # 0.82, or gait_asymmetry - and those flow through the knowledge
+            # graph into needs_escalation and land here, in a veterinary
+            # officer's feed, about an animal nothing examined. Someone could
+            # drive to a farm over it.
+            #
+            # The alert is still raised, because the escalation path is a real
+            # feature that has to be demonstrable, but it is labelled so that
+            # nobody acts on a placeholder. Suppressing it instead would hide
+            # the feature; labelling it keeps the demo honest.
+            "demonstration": not str(result.get("engine", "")).startswith("ml"),
             "top_risks": [r.get("label") or r["condition"]
                           for r in risks[:3]],
             "herd_alerts": list(herd_alerts),
@@ -350,10 +462,11 @@ def create_session(
         }, upsert=True)
 
     weight = result.get("weight_kg")
+    # low/high are honestly None when weight could not be measured (Heart
+    # Girth needs a 3D model that does not exist yet). Do not fabricate a
+    # midpoint, and do not crash on None + None.
     weight_mid = None
-    if isinstance(weight, dict) and \
-            isinstance(weight.get("low"), (int, float)) and \
-            isinstance(weight.get("high"), (int, float)):
+    if isinstance(weight, dict) and             isinstance(weight.get("low"), (int, float)) and             isinstance(weight.get("high"), (int, float)):
         weight_mid = (weight["low"] + weight["high"]) // 2
     try:
         db.sessions.insert_one({
@@ -569,5 +682,20 @@ def get_history(animal_id: str):
             "date": s["date"],
             "weight_kg_mid": s.get("weight_kg_mid"),
             "health_flags": s.get("health_flags", []),
+            # WITHOUT THIS THE HISTORY SCREEN DRAWS INVENTED WEIGHTS AS A TREND.
+            #
+            # The scorecard, the chat, the reports and the alert feed all
+            # disclose the baseline engine. This endpoint did not send the
+            # field at all, so the one screen that plots weight over time had
+            # no way to know, and rendered three placeholder figures - 392,
+            # 405, 418 kg from random.Random(animal_id) - as a confident
+            # rising line with a green figure beside each row.
+            #
+            # Measured on animal 356279812345: the assistant refuses that same
+            # weight outright ("did not produce a real weight measurement")
+            # while History shows it climbing. Same animal, same app, opposite
+            # claims - and the trend is the more persuasive of the two,
+            # because a line going up looks like evidence.
+            "measured": str(s.get("result", {}).get("engine", "")).startswith("ml"),
         })
     return {"animal_id": animal_id, "sessions": sessions}

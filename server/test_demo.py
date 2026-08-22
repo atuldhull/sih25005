@@ -1,5 +1,15 @@
 """Tests for the demo console + demo story. Needs MongoDB running.
 
+WARNING: THIS TEST WIPES EVERY SCORING SESSION.
+
+It calls demo_seed.main(), whose job is a stage reset: db.sessions and
+db.vet_alerts are emptied and server/uploads is cleared, then the seven
+demo sessions are re-created. That is correct for a rehearsal reset and
+wrong to run by accident - any session captured from the app is destroyed,
+and the app will still show it as synced, because it was.
+
+Do not run the server suite between capturing a session and showing it.
+
 Run:  venv\\Scripts\\python test_demo.py
 """
 import shutil

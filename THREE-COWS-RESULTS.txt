@@ -1,0 +1,152 @@
+THREE COWS - tested, and what each one honestly produces
+========================================================
+
+Every number below was produced by posting these exact files to the running
+server. Nothing here is estimated.
+
+FIRST, THE NUMBER YOU ASKED ABOUT. "Most of the twenty traits" is not
+reachable and no photograph will change that. Twelve of the twenty need udder,
+teat or rib landmarks that were never annotated - they return 0.0% on every
+photograph ever tested, because the keypoint model was trained on 22 of 41
+joints. The honest ceiling is 5 to 8. These three sets get 3, 4 and 3.
+
+
+HOW TO USE A SET
+----------------
+Gallery button on each capture screen. Load side.jpg for the side step,
+rear.jpg for the rear step, walking-video.mp4 for the video step, and tag.jpg
+for the ear tag - then type that cow's animal id when the app asks.
+
+
+-------------------------------------------------------------------------
+COW 1   Gir, cattle          type: 356279812345
+-------------------------------------------------------------------------
+  SCORED 3 of 20        engine ml-pipeline
+     Rump Width        score 3    43.3 cm      [rear]
+     Rear Legs Set     score 4   142.2 deg     [side]
+     Udder Depth       score 5     7.8 cm      [rear]
+  species  cattle 1.000   group red_zebu 0.996   consistent with the record
+  weight   NOT ESTIMATED - this cow wears no tag in her own photograph, so
+           there is no scale to carry across. Correct behaviour.
+
+  WARNING: rear.jpg is a DIFFERENT ANIMAL - the stock rear view, because no
+  rear photograph of this Gir exists. So Rump Width and Udder Depth describe
+  that other animal. The only number that describes THIS cow is Rear Legs Set.
+  If asked "how many traits did this photo earn", the answer is one.
+
+
+-------------------------------------------------------------------------
+COW 2   Murrah, BUFFALO      type: 356279812347
+-------------------------------------------------------------------------
+  SCORED 4 of 20        engine ml-pipeline      <- the best of the three
+     Stature           score 1   113.7 cm      [side]
+     Body Depth        score 3    71.3 cm      [side]
+     Rear Legs Set     score 9   160.0 deg     [side]
+     Udder Depth       score 3    15.7 cm      [rear]
+  species  BUFFALO 1.000   group buffalo 1.000   consistent with the record
+
+  THE STRONGEST THING IN THIS FOLDER: the classifier calls this animal a
+  buffalo at full confidence, against a buffalo record. Species and group are
+  the part that works with no tag and no scale at all.
+
+  DO NOT QUOTE THE WEIGHT. It reads 1017-1474 kg. A real Murrah is 450-700.
+  This buffalo wears her own yellow ear tag in the side photograph, the scale
+  transfer latched onto it, and the assumed panel height is wrong - so the
+  cm/px is wrong, and weight goes as the CUBE of that error. It is the exact
+  failure documented in AUDIT-measured-or-invented.md section 2.
+
+  If a judge spots it, that is a good moment, not a bad one:
+    "That weight is wrong and we can tell you why. It's derived from the ear
+     tag, the tag's true size is assumed rather than known, and weight goes as
+     the cube of that error. It's why the weight card shows a range and a
+     second method that disagrees rather than one confident number."
+
+  IF YOU WOULD RATHER NOT SHOW A WRONG WEIGHT: skip the tag step. Without
+  tag.jpg this set scores 1 trait (Rear Legs Set, score 9) and reports NO
+  weight at all. Fewer traits, nothing to defend. Your call.
+
+  rear.jpg is also a different animal - the stock rear view.
+
+
+-------------------------------------------------------------------------
+COW 3   Kankrej, cattle      type: 356279812352
+-------------------------------------------------------------------------
+  SCORED 3 of 20        engine ml-pipeline
+     Stature           score 5   135.1 cm      [side]
+     Body Length       score 6   145.6 cm      [side]
+     Udder Depth       score 3    15.7 cm      [rear]
+  species  cattle 1.000   group grey_draught 1.000   consistent with the record
+  weight   NOT ESTIMATED.
+
+  The best CENTIMETRE result of the three: Stature 135.1 cm and Body Length
+  145.6 cm are both plausible for a Kankrej cow, and both come from the side
+  photograph rather than a borrowed rear one. Two of these three numbers
+  genuinely describe this animal.
+
+  rear.jpg is a different animal, so Udder Depth does not.
+
+
+-------------------------------------------------------------------------
+walking-video.mp4
+-------------------------------------------------------------------------
+  640x480, 85 frames, 12 fps, 7.1 seconds. A real Holstein really walking,
+  side-on, across a farm yard.
+
+  HONEST: 14 of those 85 frames are real. The source dataset keeps only every
+  third frame, so the real footage covers about 1.4 seconds; the rest were
+  interpolated with optical flow to make it watchable. The GAIT is real, the
+  SPEED is roughly 5x slow motion.
+
+  It changes no result. That was verified rather than assumed: the same
+  session posted with and without the video returned identical scores, and the
+  only difference anywhere in the response was captured.gait_video true vs
+  false. Nothing in this build analyses gait. The clip exists so the capture
+  step shows something real instead of a black screen.
+
+
+-------------------------------------------------------------------------
+WHAT TO SAY ABOUT THE TRAIT COUNT
+-------------------------------------------------------------------------
+"Twelve of the twenty traits need udder and teat landmarks. Our keypoint model
+ was trained on 22 of 41 joints - those nineteen were never annotated, so they
+ return zero on every photograph. That's a labelling job, not a modelling one.
+ Of the eight that are reachable, five need a centimetre scale from the ear
+ tag. So the honest ceiling today is five to eight, and the scorecard tells you
+ exactly which ones and why each of the rest refused."
+
+That is a team that knows its own system. "It only does 1 of 20" sounds broken.
+
+
+-------------------------------------------------------------------------
+A TRAP FOUND WHILE TRYING TO IMPROVE THESE - READ IT
+-------------------------------------------------------------------------
+The rear photograph paired with all three cows is a DIFFERENT ANIMAL. There
+is no rear view of any of these three in the datasets - that was searched,
+not assumed.
+
+An attempt was made to at least colour-match it: a real Murrah rear view
+(Murrah_11.jpg) was tested as cow2's rear. It came back 20 OF 20 TRAITS with a
+comfortable 367-395 kg weight, and it was completely fake:
+
+    engine = baseline          <- the fabricating fallback
+    predicted_species = None
+    server log: "weight_kg: implausible range 2935.9-4659.9 kg"
+
+The real pipeline computed 2936-4660 kg from that small rear photo, the
+validator correctly rejected it as impossible, and the server fell back to
+inventing all twenty scores. It looked BETTER than every honest result in this
+folder.
+
+That is the whole thesis of this project, caught live. Two rules follow:
+
+  1. ALWAYS CHECK THE ENGINE FIELD. "ml-pipeline" is measured. "baseline" is
+     invented. Nothing else in the response tells you which you are looking at.
+     The app shows a red DEMONSTRATION DATA banner for baseline results - if
+     you see it, do not read the numbers out.
+
+  2. A RESULT THAT SUDDENLY LOOKS GREAT IS THE ONE TO DISTRUST. Twenty of
+     twenty is not possible on this build - twelve traits have no annotated
+     landmarks. If you ever see 20/20, it is the fake engine.
+
+The three sets in this folder were re-confirmed on engine ml-pipeline after
+this was found: 3, 4 and 3 traits. Those are real.

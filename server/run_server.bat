@@ -49,6 +49,25 @@ echo MongoDB is answering.
 
 cd /d "%~dp0"
 
+REM --- locate the Python environment -------------------------------------
+REM  This folder has no venv of its own: the working environment (torch,
+REM  ultralytics, pymongo, whisper) lives in the sibling checkout. Hard-coding
+REM  "venv\Scripts\python" meant these scripts failed the moment they were run
+REM  from the integration repo, which is the only place they matter now.
+REM  Prefer a local venv if someone creates one; fall back to the real one.
+set "PY=%~dp0venv\Scripts\python.exe"
+if not exist "%PY%" set "PY=D:\sih25005\server\venv\Scripts\python.exe"
+if not exist "%PY%" (
+    echo ERROR: no Python environment found.
+    echo   looked in %~dp0venv\Scripts\python.exe
+    echo   and in    D:\sih25005\server\venv\Scripts\python.exe
+    pause
+    exit /b 1
+)
+echo Using Python: %PY%
+
+
+
 REM mid-demo recovery guard: if the server is already up, do not bind
 REM a second instance on the same port
 powershell -NoProfile -Command "try { Invoke-WebRequest -Uri http://127.0.0.1:8000/ping -UseBasicParsing -TimeoutSec 3 | Out-Null; exit 0 } catch { exit 1 }"
@@ -78,7 +97,7 @@ echo hot-reloaded - no restart needed for either.
 echo Press Ctrl+C to stop the server. MongoDB keeps running.
 echo.
 
-venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 8000
+"%PY%" -m uvicorn main:app --host 0.0.0.0 --port 8000
 
 REM keep the window open so a crash/bind error stays readable
 pause

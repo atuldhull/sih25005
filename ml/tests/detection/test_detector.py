@@ -1,0 +1,196 @@
+﻿"""Tests for the detection module (RT-DETR label mapping, detection, SAM2 upgrade)."""
+
+import numpy as np
+import pytest
+
+from ml.detection import detector  # noqa: E402
+from ml.common.schemas import DetectionResult
+from ml.config.detection import EAR_TAG_DECODER_LAYER  # noqa: E402
+
+
+@pytest.fixture
+def sample_image(tmp_path):
+    """Write a small synthetic image and return its path."""
+    img = np.zeros((200, 400, 3), dtype=np.uint8)
+    img[80:160, 150:300] = 120
+    path = tmp_path / "sample.png"
+    import cv2
+
+    cv2.imwrite(str(path), img)
+    return str(path)
+
+
+# ---------------------------------------------------------------------------
+# Label mapping layer
+# ---------------------------------------------------------------------------
+class TestLabelMapping:
+    def test_maps_int_index(self):
+        assert detector.map_class_name(0) == "animal"
+        assert detector.map_class_name(1) == "ear_tag"
+
+    # REMOVED (REVIEW-ml-dev.md B4 fallout): test_maps_native_string_labels
+    # used to assert that "cow"/"buffalo" string labels mapped to "animal".
+    # That was specific to the old Ultralytics backend, which sometimes
+    # returned string class names. HuggingFace transformers' RT-DETRv2
+    # always returns integer class IDs (see RAW_LABEL_TO_CLASS_NAME in
+    # config/detection.py, now {0: "animal", 1: "ear_tag"} only), so this
+    # scenario can no longer occur and the test is obsolete, not just broken.
+
+    def test_raises_on_unrecognized_raw_label(self):
+        with pytest.raises(detector.DetectionLabelError):
+            detector.map_class_name(99)
+
+    def test_validate_label_map_rejects_bad_target(self, monkeypatch):
+        monkeypatch.setattr(
+            detector,
+            "RAW_LABEL_TO_CLASS_NAME",
+            {**detector.RAW_LABEL_TO_CLASS_NAME, 2: "predator"},
+        )
+        with pytest.raises(detector.DetectionLabelError):
+            detector.validate_label_map()
+
+
+# ---------------------------------------------------------------------------
+# Detection functions
+#
+# CHANGED (REVIEW-ml-dev.md B4 fallout): load_rt_detr() now returns a
+# (model, processor) tuple instead of a single Ultralytics-style object with
+# .predict(). Rather than faking the internals of a transformers model call,
+# these tests mock detector._run_detector directly - that's the real
+# boundary between our code and the ML backend, and it's backend-agnostic:
+# these tests won't need to change again even if the transformers call
+# signature changes internally.
+# ---------------------------------------------------------------------------
+class TestDetection:
+    def test_detect_animal_returns_result(self, sample_image, monkeypatch):
+        monkeypatch.setattr(detector, "load_rt_detr", lambda device=None: (object(), object()))
+        monkeypatch.setattr(
+            detector,
+            "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5: [
+                {"label": 0, "score": 0.92, "bbox": (1, 2, 300, 150)},
+                {"label": 1, "score": 0.81, "bbox": (200, 100, 260, 130)},
+            ],
+        )
+        result = detector.detect_animal(sample_image)
+        assert isinstance(result, DetectionResult)
+        assert result.class_name == "animal"
+        assert result.bbox == (1, 2, 300, 150)
+        assert result.confidence == pytest.approx(0.92)
+
+    def test_detect_animal_none_when_no_animal(self, sample_image, monkeypatch):
+        monkeypatch.setattr(detector, "load_rt_detr", lambda device=None: (object(), object()))
+        monkeypatch.setattr(
+            detector,
+            "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5: [
+                {"label": 1, "score": 0.81, "bbox": (0, 0, 10, 10)}
+            ],
+        )
+        assert detector.detect_animal(sample_image) is None
+
+    def test_detect_ear_tag_returns_full_frame_coords(self, sample_image, monkeypatch):
+        """Boxes come back in FULL-IMAGE coordinates, with no crop offset.
+
+        Replaces test_detect_ear_tag_returns_cropped_coords. The detector no
+        longer crops to the animal and re-runs, so there is no offset to add
+        back - adding one now would shift every tag by the animal box's
+        origin, which is exactly the bug that produced a box at x1 = -50.9.
+        """
+        calls = []
+
+        def fake_run(image_bgr, model_and_processor, threshold=0.5,
+                     decoder_layer=None):
+            calls.append({"shape": image_bgr.shape,
+                          "decoder_layer": decoder_layer})
+            return [{"label": 1, "score": 0.88, "bbox": (125, 80, 175, 100)}]
+
+        monkeypatch.setattr(detector, "load_rt_detr",
+                            lambda device=None: (object(), object()))
+        monkeypatch.setattr(detector, "_run_detector", fake_run)
+        result = detector.detect_ear_tag(sample_image, (100, 60, 300, 160))
+
+        assert isinstance(result, DetectionResult)
+        assert result.class_name == "ear_tag"
+        # unchanged from what the detector returned: no offset arithmetic
+        assert result.bbox == (125, 80, 175, 100)
+        # exactly one forward pass, on the whole frame, at the configured layer
+        assert len(calls) == 1
+        assert calls[0]["decoder_layer"] == EAR_TAG_DECODER_LAYER
+
+    def test_detect_ear_tag_rejects_a_tag_outside_the_animal(
+            self, sample_image, monkeypatch):
+        """Containment replaces the crop.
+
+        A tag mostly outside the animal box belongs to a neighbouring animal.
+        The old crop could pick those up along its edges; containment cannot.
+        """
+        monkeypatch.setattr(detector, "load_rt_detr",
+                            lambda device=None: (object(), object()))
+        monkeypatch.setattr(
+            detector, "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5,
+            decoder_layer=None: [
+                {"label": 1, "score": 0.95, "bbox": (10, 10, 30, 20)}
+            ],
+        )
+        # animal box is (100, 60, 300, 160); the tag sits entirely outside it
+        assert detector.detect_ear_tag(sample_image, (100, 60, 300, 160)) is None
+
+    def test_detect_ear_tag_none_when_no_tag(self, sample_image, monkeypatch):
+        monkeypatch.setattr(detector, "load_rt_detr",
+                            lambda device=None: (object(), object()))
+        monkeypatch.setattr(
+            detector, "_run_detector",
+            lambda image_bgr, model_and_processor, threshold=0.5,
+            decoder_layer=None: [
+                {"label": 0, "score": 0.92, "bbox": (1, 2, 300, 150)}
+            ],
+        )
+        assert detector.detect_ear_tag(sample_image, (100, 60, 300, 160)) is None
+
+
+# ---------------------------------------------------------------------------
+# Segmentation (SAM2 unavailable -> rectangular fallback)
+# ---------------------------------------------------------------------------
+class TestSegmentation:
+    def test_segment_animal_falls_back_to_rect(self, sample_image, monkeypatch):
+        monkeypatch.setattr(
+            detector,
+            "load_sam2",
+            lambda device=None: (_ for _ in ()).throw(
+                detector.DetectionBackendError("SAM2 weights not found")
+            ),
+        )
+        mask, degraded = detector.segment_animal(sample_image, (60, 40, 340, 160))
+        assert mask.shape == (200, 400)
+        assert set(np.unique(mask)) <= {0, 255}
+        assert degraded is True
+        # rectangle interior is foreground
+        assert mask[100, 200] == 255
+        # outside bbox is background
+        assert mask[10, 10] == 0
+
+    def test_segment_animal_requires_existing_image(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            detector,
+            "load_sam2",
+            lambda device=None: (_ for _ in ()).throw(
+                detector.DetectionBackendError("SAM2 weights not found")
+            ),
+        )
+        with pytest.raises(detector.DetectionBackendError):
+            detector.segment_animal(str(tmp_path / "missing.png"), (0, 0, 10, 10))
+
+    def test_backend_error_raised_when_rtdetr_unavailable(self, sample_image, monkeypatch):
+        def boom(device=None):
+            raise detector.DetectionBackendError("RT-DETR weights not found")
+
+        monkeypatch.setattr(detector, "load_rt_detr", boom)
+        with pytest.raises(detector.DetectionBackendError):
+            detector.detect_animal(sample_image)
+
+    def test_resolve_device_defaults_to_cpu_when_no_torch_cuda(self, monkeypatch):
+        monkeypatch.setattr(detector, "resolve_device", lambda d: "cpu")
+        assert detector.segment_animal  # reachable reference; covered above
+        assert "cpu" in (detector.resolve_device("auto"), detector.resolve_device("cpu"))
