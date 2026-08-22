@@ -3,10 +3,28 @@ from pathlib import Path as _Path
 """Detection module configuration: model paths, thresholds, and raw-label mapping."""
 
 RAW_LABEL_TO_CLASS_NAME = {
-    # Placeholder mapping between the fine-tuned RT-DETRv2 checkpoint's native
-    # labels and the canonical class names used downstream. Keys are the
-    # integer class indices the model was trained with (0=animal, 1=ear_tag,
-    # matching data.yaml / the COCO categories used in Kaggle training).
+    # Mapping between the fine-tuned RT-DETRv2 checkpoint's native labels and
+    # the canonical class names used downstream. Keys are the integer class
+    # indices the model was trained with.
+    #
+    # AUTHORITY: the checkpoint itself. models/rtdetr/animal_tag_rtdetr/config.json
+    # declares id2label {"0": "animal", "1": "ear_tag"}, and its
+    # denoising_class_embed is 3x256 (num_labels + 1), which independently
+    # confirms two classes.
+    #
+    # This comment used to say the map matched "data.yaml / the COCO categories
+    # used in Kaggle training". It does not match any data.yaml on this machine,
+    # and saying so invited a reviewer to go and check. The eight Roboflow
+    # exports under /d/bovine-pose/raw/catbuf-indian-breeds declare
+    # ['body','ear','face','horn'] - class 1 there is the anatomical EAR, not an
+    # ear TAG, and class 0 is 'body', not 'animal'. Scanning every COCO
+    # annotation file under /d/bovine-pose for the string "ear_tag" returns zero
+    # hits: no dataset on this machine could have supplied that class.
+    #
+    # The ear_tag boxes were labelled separately, as the build plan directs -
+    # "a few hundred labeled tag boxes is enough - label with LabelStudio"
+    # (SIH25005_Team_Build_Plan.txt:267-269) - and that labelled set lives with
+    # Person 2 rather than in this repo.
     0: "animal",
     1: "ear_tag",
 }

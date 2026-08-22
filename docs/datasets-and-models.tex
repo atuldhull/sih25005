@@ -106,27 +106,52 @@ Mendeley LSD 940 \newline + Roboflow 163 &
 
 \section{The dataset inventory}
 
-Counted on disk, not taken from folder names.
+Counted on disk, not taken from folder names. Every Roboflow set below carries
+\textbf{CC BY 4.0}, declared in its own \texttt{data.yaml} or
+\texttt{README.dataset.txt}.
 
-\begin{longtable}{@{}p{5.2cm}rp{7.6cm}@{}}
+\begingroup\small
+\begin{longtable}{@{}p{5.3cm}r@{\hspace{1.1em}}p{2.7cm}p{5.4cm}@{}}
 \toprule
-\textbf{Dataset} & \textbf{Images} & \textbf{Used for} \\
+\textbf{Dataset} & \textbf{Images} & \textbf{Licence} & \textbf{Used by} \\
 \midrule
 \endhead
-\texttt{clean/bovine41\_kaggle} & 4{,}736 & Keypoint training (Section 5.2) \\
-\texttt{clean/sources} & 4{,}513 & Pooled source material \\
-\texttt{clean/breed\_kaggle} & 4{,}125 & Breed / group probes (Section 5.3) \\
-\texttt{clean/breed\_merged} & 4{,}125 & Breed / group probes, merged labels \\
-\texttt{clean/breed} & 2{,}348 & Breed / group probes \\
-\texttt{raw/luke/Indian\_bovine\_breeds} & 41 folders & Breed classes, 36--439 images each \\
-\texttt{raw/cattle-side-pose} & 2{,}576 & Side-view pose material \\
-\texttt{raw/bcs-hooks-pins} & 2{,}123 & Overhead barn frames, hooks and pins \\
-\texttt{raw/cow-side-view} & 1{,}771 & Video frames, \texttt{<source>\_mp4-<frame>} \\
-\texttt{raw/catbuf-indian-breeds} & YOLOv8 exports & Detection classes \\
-\texttt{raw/awa-pose} & annotations & Upstream pose keypoints \\
-\texttt{raw/livestock-keypoints} & 42 & Upstream pose keypoints \\
+\texttt{clean/bovine41\_kaggle} & 4{,}736 & CC BY 4.0 & Keypoints --- the merged set \\
+\texttt{clean/breed\_merged} & 4{,}125 & CC0-1.0 (export) & Breed / group probes \\
+\texttt{clean/breed\_kaggle} & 4{,}125 & CC0-1.0 (export) & Packaging copy of the above \\
+\texttt{clean/breed} & 2{,}348 & CC BY 4.0 & \bad{The control that failed} \\
+\texttt{raw/luke/Indian\_bovine\_breeds} & 5{,}927 & \bad{Not established} & Breed source 1 \\
+\texttt{raw/cattle-side-pose} & 2{,}576 & CC BY 4.0 & Keypoints (1{,}108 instances) \\
+\texttt{raw/bcs-hooks-pins} & 2{,}123 & CC BY 4.0 & Keypoints --- \good{only hooks/pins source} \\
+\texttt{raw/livestock-keypoints} & 2{,}385 & CC BY 4.0 (data) & Keypoints (9 of 18 joints map) \\
+\texttt{raw/cow-side-view} & 1{,}771 & CC BY 4.0 & Keypoints (1{,}297 instances) \\
+\texttt{raw/catbuf-indian-breeds} & 1{,}600 & CC BY 4.0 & Breed source 2 (789 kept) \\
+\texttt{raw/awa-pose} & \bad{2} & MIT (code) & \bad{Never used --- images not downloaded} \\
+\texttt{raw/cornell-teat-videos} & \bad{0} & --- & \bad{Empty. See below.} \\
 \bottomrule
 \end{longtable}
+\endgroup
+
+\subsection*{Two entries that explain more than the rest of the table}
+
+\texttt{cornell-teat-videos} is an \textbf{empty directory}. It was the
+intended source of the udder and teat landmarks. Its emptiness is the direct
+cause of the nineteen untrained joints, and therefore of twelve traits that
+cannot score. The single most valuable thing anyone could add to this project
+is the contents of that folder.
+
+\texttt{awa-pose} contributed \textbf{zero instances}. The annotation
+repository was cloned but the AwA2 images were never downloaded, so it appears
+in no source tag in \texttt{train.json} or \texttt{val.json}. It is listed here
+so nobody counts it as training data.
+
+\subsection*{Two licences that are not established}
+
+Stated plainly because a judge may ask. The Kaggle \emph{Indian Bovine Breeds}
+set (\texttt{luke}) carries \bad{no licence file, no licence field, and no
+licence statement anywhere on disk}. The Mendeley LSD and Roboflow
+\texttt{cattle-smwai} sets behind the un-integrated lesion model are likewise
+unrecorded here. Everything else is CC BY 4.0, Apache-2.0, MIT or CC0.
 
 \section{Model 1 --- RT-DETRv2, animal and ear-tag detection}
 
