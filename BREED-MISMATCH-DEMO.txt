@@ -1,0 +1,57 @@
+BREED MISMATCH DEMO - animal 356279812354 (Hariana, cattle)
+===========================================================
+
+A bonus demo that needs no traits at all.
+
+
+WHAT IT IS
+----------
+A real matched pair - the SAME Holstein cow, side view and rear view, taken
+from consecutive frames of one video as she walks past the camera and then
+away from it. This is the only genuinely matched side+rear pair found in any
+dataset on this machine.
+
+Everywhere else in this pack, the rear photograph is a different animal from
+the side photograph, because the breed datasets hold one photograph per animal
+and have no concept of the same cow from two angles. Here they really are the
+same cow.
+
+
+WHAT TO DO
+----------
+Load side.jpg, rear.jpg and tag.jpg, and type animal id 356279812354.
+
+That record says Hariana - an Indian breed. The photograph is a Holstein.
+
+
+WHAT HAPPENS
+------------
+  engine             ml-pipeline
+  predicted_species  cattle
+  predicted_group    exotic_dairy
+  group_consistent   FALSE            <- the point
+
+The app renders that as a warning on the breed identity card: the photograph
+does NOT match the registered breed, worth checking the record.
+
+Note what it does NOT do: it never corrects the record automatically. From
+here, a records error and a photograph error look identical, and only a person
+can tell them apart.
+
+Only 1 trait scores (Rear Legs Set, 141.8 degrees). These are 640x480 video
+frames - too small for reliable landmarks. That is the trade in these
+datasets: you can have a matched pair, or enough resolution to measure, but
+not both. Gir_107.jpg, by comparison, is 5184x3456.
+
+
+WHY IT IS WORTH SHOWING
+-----------------------
+Two reasons.
+
+It demonstrates the breed check working on a real mismatch, rather than being
+described. And it is the one set in this pack where every number describes the
+same animal, because the side and the rear genuinely are the same cow.
+
+If a judge has already asked why the rear photographs elsewhere are a
+different animal, this is the honest answer to follow it with: "here is one
+where they aren't - and you can see what it costs us in resolution."
