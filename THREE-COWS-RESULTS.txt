@@ -115,3 +115,38 @@ WHAT TO SAY ABOUT THE TRAIT COUNT
  exactly which ones and why each of the rest refused."
 
 That is a team that knows its own system. "It only does 1 of 20" sounds broken.
+
+
+-------------------------------------------------------------------------
+A TRAP FOUND WHILE TRYING TO IMPROVE THESE - READ IT
+-------------------------------------------------------------------------
+The rear photograph paired with all three cows is a DIFFERENT ANIMAL. There
+is no rear view of any of these three in the datasets - that was searched,
+not assumed.
+
+An attempt was made to at least colour-match it: a real Murrah rear view
+(Murrah_11.jpg) was tested as cow2's rear. It came back 20 OF 20 TRAITS with a
+comfortable 367-395 kg weight, and it was completely fake:
+
+    engine = baseline          <- the fabricating fallback
+    predicted_species = None
+    server log: "weight_kg: implausible range 2935.9-4659.9 kg"
+
+The real pipeline computed 2936-4660 kg from that small rear photo, the
+validator correctly rejected it as impossible, and the server fell back to
+inventing all twenty scores. It looked BETTER than every honest result in this
+folder.
+
+That is the whole thesis of this project, caught live. Two rules follow:
+
+  1. ALWAYS CHECK THE ENGINE FIELD. "ml-pipeline" is measured. "baseline" is
+     invented. Nothing else in the response tells you which you are looking at.
+     The app shows a red DEMONSTRATION DATA banner for baseline results - if
+     you see it, do not read the numbers out.
+
+  2. A RESULT THAT SUDDENLY LOOKS GREAT IS THE ONE TO DISTRUST. Twenty of
+     twenty is not possible on this build - twelve traits have no annotated
+     landmarks. If you ever see 20/20, it is the fake engine.
+
+The three sets in this folder were re-confirmed on engine ml-pipeline after
+this was found: 3, 4 and 3 traits. Those are real.
