@@ -1,0 +1,382 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.1cm,top=2.4cm,bottom=2.4cm]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{ink}{HTML}{16201E}
+\definecolor{soft}{HTML}{4A5754}
+\definecolor{measured}{HTML}{0E6B5E}
+\definecolor{invented}{HTML}{A63116}
+\definecolor{rule}{HTML}{C3C6BC}
+
+\color{ink}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\renewcommand{\arraystretch}{1.25}
+
+\titleformat{\section}{\Large\bfseries\color{ink}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\color{ink}}{\thesubsection}{0.6em}{}
+\titlespacing{\section}{0pt}{1.6em}{0.6em}
+
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small\color{soft}Datasets and Models}
+\fancyhead[R]{\small\color{soft}SIH 260486 \textbullet{} Team ASTRAL}
+\fancyfoot[C]{\small\color{soft}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcommand{\evidence}[1]{{\small\color{soft}\textit{Evidence: #1}}}
+\newcommand{\good}[1]{{\color{measured}\textbf{#1}}}
+\newcommand{\bad}[1]{{\color{invented}\textbf{#1}}}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\bfseries Datasets and Models}\\[0.35em]
+{\large Which data trained what, why it was chosen, and what it measured}\\[0.9em]
+{\color{soft}SIH 260486 \textbullet{} Image-based animal type classification for cattle and buffaloes\\
+Team ASTRAL \textbullet{} \today}
+\end{center}
+
+\vspace{0.6em}
+\hrule
+\vspace{1.2em}
+
+\section*{How to read this document}
+
+Every figure here was produced by a command that can be re-run against this
+repository. Where something could not be established, it says so rather than
+being filled in plausibly.
+
+Two numbers appear repeatedly and mean different things:
+
+\begin{itemize}[leftmargin=1.4em,itemsep=0.2em]
+  \item \textbf{Held-out test accuracy} --- measured on images the model never
+        trained on, but drawn from the \emph{same source} as its training data.
+        This flatters a livestock model, because photographs from one farm
+        share a backdrop, a camera and a lighting condition.
+  \item \good{Source-held-out accuracy} --- measured on photographs from a
+        source the model has never seen at all. This is the number that
+        predicts field behaviour, and it is the number we quote.
+\end{itemize}
+
+The gap between them is the whole reason this project reports what it reports.
+An earlier bovine breed model in this project scored \bad{97.9\%} on a
+held-out test set and was found to be classifying the \emph{farm}, not the
+animal. Every model below is therefore reported against a control.
+
+\section{Summary}
+
+\begin{longtable}{@{}p{3.5cm}p{4.4cm}p{3.2cm}p{4.1cm}@{}}
+\toprule
+\textbf{Model} & \textbf{Trained on} & \textbf{Status} & \textbf{Headline measure} \\
+\midrule
+\endhead
+RT-DETRv2 \newline animal + ear tag &
+Indian cattle/buffalo detection set, 2 classes &
+Shipped &
+Ear tag read from decoder layer~1 \\
+
+HRNet-W32 \newline 41-joint keypoints &
+bovine41 (4{,}736 images) &
+Shipped, \newline \bad{22 of 41 joints} &
+PCK@0.05 89.9\%, val PCK 0.9014 \\
+
+DINOv2 \newline breed / group &
+Indian Bovine Breeds \newline (41 classes, skewed) &
+Group head shipped, \newline exact-breed head \bad{disabled} &
+\good{80.2\%} group source-held-out vs 60.7\% control \\
+
+SAM2 hiera-tiny \newline segmentation &
+Not trained here --- \newline Meta, Apache-2.0 &
+Shipped as published &
+Used for silhouette, weight, chest landmarks \\
+
+DINOv2 + MLP \newline skin lesion &
+Mendeley LSD 940 \newline + Roboflow 163 &
+\bad{Not integrated} &
+0.882 held-out, \good{0.390} source-held-out \\
+\bottomrule
+\end{longtable}
+
+\section{The dataset inventory}
+
+Counted on disk, not taken from folder names.
+
+\begin{longtable}{@{}p{5.2cm}rp{7.6cm}@{}}
+\toprule
+\textbf{Dataset} & \textbf{Images} & \textbf{Used for} \\
+\midrule
+\endhead
+\texttt{clean/bovine41\_kaggle} & 4{,}736 & Keypoint training (Section 5.2) \\
+\texttt{clean/sources} & 4{,}513 & Pooled source material \\
+\texttt{clean/breed\_kaggle} & 4{,}125 & Breed / group probes (Section 5.3) \\
+\texttt{clean/breed\_merged} & 4{,}125 & Breed / group probes, merged labels \\
+\texttt{clean/breed} & 2{,}348 & Breed / group probes \\
+\texttt{raw/luke/Indian\_bovine\_breeds} & 41 folders & Breed classes, 36--439 images each \\
+\texttt{raw/cattle-side-pose} & 2{,}576 & Side-view pose material \\
+\texttt{raw/bcs-hooks-pins} & 2{,}123 & Overhead barn frames, hooks and pins \\
+\texttt{raw/cow-side-view} & 1{,}771 & Video frames, \texttt{<source>\_mp4-<frame>} \\
+\texttt{raw/catbuf-indian-breeds} & YOLOv8 exports & Detection classes \\
+\texttt{raw/awa-pose} & annotations & Upstream pose keypoints \\
+\texttt{raw/livestock-keypoints} & 42 & Upstream pose keypoints \\
+\bottomrule
+\end{longtable}
+
+\section{Model 1 --- RT-DETRv2, animal and ear-tag detection}
+
+\textbf{Job.} Find the animal in the frame, and find the ear tag. Everything
+downstream depends on it: no detection means no pose, no segmentation, and no
+measurement.
+
+\subsection*{The version pin that matters more than it looks}
+
+\texttt{ml/requirements.txt} pins \texttt{transformers==5.0.0} exactly, and
+\texttt{server/preflight.py} \emph{fails} if anything else is installed.
+
+RT-DETRv2 stores its per-layer prediction heads \textbf{tied}. Version 5.15.1
+expects them untied and fills the gap with random weights. The ear-tag path
+reads decoder layer~1 --- one of the layers it randomises.
+
+It does not crash. It returns a \bad{confident-looking 0.62 detection with a
+box outside the image}, and the value changes on every process start. A silent
+wrong answer is far more expensive than a loud failure, which is why the pin is
+enforced by a preflight check rather than a comment.
+
+\evidence{\texttt{models/README.md}, \texttt{ml/requirements.txt},
+\texttt{server/preflight.py}}
+
+\subsection*{Why decoder layer 1}
+
+The final layer's ear-tag head collapsed to \bad{AP@0.5 = 0.001}. Layer~1 is
+read instead. This is recorded in the manifest so that nobody re-discovers it
+by debugging a detector that appears to work for animals and not for tags.
+
+\evidence{\texttt{models/MANIFEST.json}}
+
+\section{Model 2 --- HRNet-W32 bovine keypoints}
+
+\textbf{Job.} Place the anatomical landmarks that every conformation
+measurement is built from. \textbf{This model is the system's bottleneck, and
+the honest ceiling on what the product can score.}
+
+\subsection*{Training}
+
+\begin{tabular}{@{}ll@{}}
+\toprule
+Run & \texttt{bovine41-pose-v2-hrnet384} (Kaggle) \\
+Architecture & HRNet-W32 at 384 resolution \\
+Checkpoint & epoch 42 \\
+Validation & val PCK 0.9014, PCK@0.05 89.9\% \\
+Schema & 41 canonical joints \\
+\bad{Joints trained} & \bad{22 of 41} \\
+\bottomrule
+\end{tabular}
+
+\subsection*{The nineteen joints nobody annotated}
+
+Measured over 40 real photographs, every one of these returns confidence
+\bad{0.0\%} --- not low confidence, \emph{zero}, on every image:
+
+\begin{quote}\small
+\texttt{udder\_floor}, \texttt{fore\_udder\_top},
+\texttt{fore\_udder\_body\_junction}, \texttt{rear\_udder},
+\texttt{rear\_udder\_top}, \texttt{rear\_udder\_left},
+\texttt{rear\_udder\_right}, \texttt{udder\_cleft\_top},
+\texttt{udder\_cleft\_bottom}, \texttt{teat\_front\_left},
+\texttt{teat\_front\_right}, \texttt{teat\_front\_left\_top},
+\texttt{teat\_front\_left\_bottom}, \texttt{teat\_rear\_left},
+\texttt{teat\_rear\_right}, \texttt{teat\_width\_left\_1},
+\texttt{teat\_width\_left\_2}, \texttt{vulva\_base}, and the
+\texttt{rib\_angle\_*} triple.
+\end{quote}
+
+The model was never taught these landmarks exist. \textbf{That blocks 12 of the
+20 contract traits outright}, and it is a labelling task, not a modelling one.
+
+\subsection*{What the model does place well}
+
+\begin{tabular}{@{}lr@{\hspace{2.2em}}lr@{}}
+\toprule
+\texttt{chest\_front} & 100\% & \texttt{withers} & 70\% \\
+\texttt{hoof\_left/right} & 95\% & \texttt{chest\_bottom} & 60\% \\
+\texttt{pastern\_left} & 95\% & \texttt{shoulder\_left} & 55\% \\
+\texttt{tail\_head} & 90\% & \texttt{hook\_left} & 38\% \\
+\texttt{hock\_left} & 88\% & \bad{\texttt{pin\_right}} & \bad{20\%} \\
+\bottomrule
+\end{tabular}
+
+The pattern is consistent: the model learned the animal's hindquarters and legs
+well and its front and rump poorly. That is why leg-angle traits score and
+chest and rump traits mostly refuse.
+
+\subsection*{The confidence threshold was measured, not chosen}
+
+\texttt{POSE\_MIN\_KEYPOINT\_CONFIDENCE = 0.10}. Re-gating 55 photographs:
+
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\textbf{Gate} & \textbf{Usable joints} & \textbf{Measurements} & \textbf{In-band rate} \\
+\midrule
+0.30 & 6.5 & 41 & 34.1\% \\
+0.25 & 7.5 & 46 & 39.1\% \\
+0.20 & 8.7 & 62 & 35.5\% \\
+0.15 & 10.8 & 86 & 37.2\% \\
+\textbf{0.10} & \textbf{14.2} & \textbf{142} & \textbf{35.9\%} \\
+0.05 & 15.3 & 167 & 34.1\% \\
+\bottomrule
+\end{tabular}
+
+The in-band rate is the \emph{control}. If a looser gate were admitting
+misplaced joints, the extra measurements would scatter and that rate would fall
+toward chance. It does not move --- so the measurements a strict gate was
+discarding were as plausible as the ones it kept, and there were three times as
+many. 0.05 is where the rate finally slips, so the knee at 0.10 is taken.
+
+\evidence{\texttt{ml/config/models.py}}
+
+\section{Model 3 --- DINOv2 breed and group verification}
+
+\textbf{Job.} Check the photograph against the registered breed. The checkpoint
+is 81\,KB because only the linear probes are stored; the DINOv2 backbone is
+fetched by \texttt{timm} on first use.
+
+\subsection*{The exact-breed head disables itself}
+
+Measured at \bad{38.1\% source-held-out}. Its confidence carries no usable
+signal either: tightening the threshold from answering every time to answering
+30\% of the time moves accuracy by only 5.6 points.
+
+The trained checkpoint therefore \textbf{switches its own breed head off}. The
+app never names a breed from a photograph, and \texttt{breed\_verified: false}
+means \textbf{NOT CHECKED} --- never ``contradicted''. Rendering it as a
+mismatch would accuse every correctly registered animal in the district.
+
+\subsection*{The group head, and the control that makes it meaningful}
+
+\begin{tabular}{@{}lr@{}}
+\toprule
+Group head, source-held-out & \good{80.2\%} \\
+Background-only control & 60.7\% \\
+Species head, source-held-out & 88.5\% \\
+\bottomrule
+\end{tabular}
+
+The background-only control is the important column. It measures what a model
+scores when it can see \emph{only the backdrop} and not the animal. A model
+that scored 80\% against a 79\% control would have learned the farm. At
+80.2\% against 60.7\%, this one has learned something about the animal.
+
+Five groups: \texttt{red\_zebu}, \texttt{grey\_draught},
+\texttt{dwarf\_cattle}, \texttt{exotic\_dairy}, \texttt{buffalo}. Where a
+group's own recall is poor --- \texttt{exotic\_dairy} at 43\% --- the response
+carries \texttt{group\_reliable: false} and the app shows it as a hint rather
+than a finding.
+
+\subsection*{Dataset skew}
+
+The Indian Bovine Breeds source has 36--439 images per class across 41
+breed folders. That imbalance is the reason the exact-breed head cannot be
+trusted and the coarser group head can.
+
+\section{Model 4 --- SAM2 hiera-tiny}
+
+\textbf{Not trained by this team.} Meta's published checkpoint, Apache-2.0,
+used as-is for silhouette segmentation.
+
+It matters more than its size suggests. The 2D-to-3D weight estimator, the
+\texttt{chest\_bottom} landmark and the udder floor all depend on a real
+silhouette. SAM2 was once \emph{absent from the server environment entirely},
+and \texttt{segment\_animal} silently fell back to the detection box as a plain
+rectangle on every image --- disabling all three without a single error. It is
+now pinned in the requirements and checked at preflight.
+
+\evidence{\texttt{STATUS-measured.md}, \texttt{ml/detection/detector.py}}
+
+\section{Model 5 --- skin lesion detector (not integrated)}
+
+\textbf{Status: not in the shipped system.} No checkpoint is in this
+repository and none is on any branch. This is why the app reports
+\textbf{NOT SCREENED} rather than a clean bill of health --- an empty symptom
+list is not a clinical finding.
+
+\begin{tabular}{@{}lrp{6.4cm}@{}}
+\toprule
+\textbf{Source} & \textbf{Images} & \textbf{Labels} \\
+\midrule
+Mendeley LSD & 940 & \texttt{skin\_nodules}: 289 positive, 651 negative \\
+Roboflow \texttt{cattle-smwai} & 163 & \texttt{circular\_skin\_patches}: 99 positive, 64 negative \\
+\midrule
+Total & 1{,}103 & cluster-split 769 / 165 / 169 \\
+\bottomrule
+\end{tabular}
+
+Architecture: DINOv2 ViT-S/14 frozen, MLP head $384 \to 128 \to 4$, masked BCE
+so that $-1$ labels contribute zero gradient (verified by gradient inspection,
+not asserted).
+
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Skin nodules} & \textbf{Held-out test} & \good{Source-held-out} \\
+\midrule
+F1 & 0.882 & \bad{0.390} \\
+Precision & 0.911 & 0.471 \\
+Recall & 0.854 & 0.333 \\
+\bottomrule
+\end{tabular}
+
+\subsection*{Why it is not integrated}
+
+Two blockers, neither about the model itself.
+
+\textbf{The source-held-out figure may be measuring an untrained head.} Each
+symptom's labels live entirely in one source --- Mendeley carries
+\texttt{skin\_nodules} and masks circular patches, Roboflow the reverse. Holding
+out a source therefore removes \emph{all} supervision for that head. A true
+source-held-out experiment may not be possible on this dataset as built, and
+the fix would be skin-nodule images from a second source.
+
+\textbf{The background-only control did not complete.} It returned empty
+metrics after RT-DETR checkpoint warnings. A run that errored and predicted
+nothing yields the same 0.000 recall as a model that correctly refused, so it
+cannot be read as the control passing.
+
+By this project's own standard --- the exact-breed head disables itself at
+38.1\% --- \texttt{skin\_nodules} at 0.390 should also disable itself.
+\texttt{circular\_skin\_patches} at 0.889 sits nearer the group head's 80.2\%,
+but rests on only 9 positive test examples (Wilson 95\% CI 0.57--0.98).
+
+\section{What this means for the product}
+
+The trait ceiling is not a bug and not a tuning problem:
+
+\begin{tabular}{@{}lrp{7.4cm}@{}}
+\toprule
+\textbf{Traits} & \textbf{Count} & \textbf{Blocked by} \\
+\midrule
+Blocked & 12 & Udder, teat and rib landmarks never annotated \\
+Weak & 3 & \texttt{pin\_right} resolves 20\% of the time \\
+Reachable & 5 & Of which 5 need a centimetre scale from the ear tag \\
+\bottomrule
+\end{tabular}
+
+So the honest ceiling today is \textbf{5 to 8 traits}, and the scorecard states
+which ones and why each of the rest refused. Reaching 20 requires an annotation
+session, not a better model.
+
+\vspace{1.4em}
+\hrule
+\vspace{0.7em}
+{\small\color{soft}
+Model weights are excluded from git and fetched by
+\texttt{scripts/fetch\_models.py}, which verifies a SHA256 against
+\texttt{models/MANIFEST.json} and refuses a mismatch --- a truncated download
+otherwise behaves exactly like a broken model.
+}
+
+\end{document}
